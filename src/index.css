@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Knewave&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink: #0a0a0a;
+  --paper: #f5f0e8;
+  --accent: #ff3b1f;
+  --accent2: #f5c800;
+  --muted: #6b6560;
+  --border: rgba(245,240,232,0.12);
+  --card: #141414;
+  --font-display: 'Knewave', cursive;
+  --font-mono: var(--font-display);
+  --font-body: 'Knewave', cursive;
+  --radius: 4px;
+}
+
+html { font-size: 16px; scroll-behavior: smooth; }
+
+body {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-display);
+  font-weight: 300;
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+img { display: block; max-width: 100%; }
+button { cursor: pointer; border: none; background: none; font: inherit; }
+
+/* Leaflet override */
+.leaflet-container {
+  background: #1a1a1a !important;
+  font-family: var(--font-display) !important;
+}
+.leaflet-tile { filter: grayscale(80%) invert(1) contrast(0.9) brightness(0.85) hue-rotate(180deg); }
+.leaflet-popup-content-wrapper {
+  background: var(--card) !important;
+  color: var(--paper) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+}
+.leaflet-popup-tip { background: var(--card) !important; }
+.leaflet-popup-content { margin: 14px 16px !important; }
+.leaflet-control-zoom a {
+  background: var(--card) !important;
+  color: var(--paper) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-bar { border: 1px solid var(--border) !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--ink); }
+::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+/* Animations */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scanline {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 100%; }
+}
+
+.fade-up { animation: fadeUp 0.5s ease forwards; }
