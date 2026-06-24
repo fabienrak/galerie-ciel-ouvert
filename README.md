@@ -1,6 +1,7 @@
 # 🎨 Galerie à Ciel Ouvert
 
-PWA mobile-first pour explorer les fresques et street art du quartier — Antananarivo.
+Galerie à ciel ouvert dans le quartier d'Ankadivato Antananarivo 101. 
+Transformer le quartier en Vraie galerie d'art (Street Art, Graffiti, Fresque, ...) pour les publics. Projet initié par les Crews, cette application est une guide pour les traces de ces art dans le quartier
 
 ## Stack
 
