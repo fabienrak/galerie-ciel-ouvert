@@ -1,9 +1,9 @@
-# 🎨 Galerie à Ciel Ouvert
+# 🎨 Galerie à Ciel Ouvert - ANKADIVATO
 
 Galerie à ciel ouvert dans le quartier d'Ankadivato Antananarivo 101. 
 Transformer le quartier en Vraie galerie d'art (Street Art, Graffiti, Fresque, ...) pour les publics. Projet initié par les Crews, cette application est une guide pour les traces de ces art dans le quartier
 
-## Stack
+## Stack technique
 
 - **React + Vite** — UI
 - **react-leaflet** — carte interactive (tuiles OSM, gratuit)
@@ -38,7 +38,7 @@ Sans `.env`, l'app tourne en **mode démo** avec des données fictives.
 | `/artiste/:id` | Profil artiste |
 | `/admin` | Ajouter fresque / artiste |
 
-## Déploiement Netlify
+## Déploiement Netlify (Actuellement)
 
 ```bash
 npm run build
