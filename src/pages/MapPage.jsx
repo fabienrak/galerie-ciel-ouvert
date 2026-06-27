@@ -12,9 +12,10 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'YOUR_MAPBOX_TOKEN'
 const MAP_STYLE = 'mapbox://styles/fabienrak/cmqphszet002101s35j4n9dgw'
 
 const ANKADIVATO_CENTER = [47.5290, -18.9102]
+// Bounds serrés sur Ankadivato — impossible de sortir du quartier
 const ANKADIVATO_BOUNDS = [
-  [47.5245, -18.9150],
-  [47.5340, -18.9060],
+  [47.5258, -18.9138],   // SW — coin sud-ouest
+  [47.5328, -18.9072],   // NE — coin nord-est
 ]
 
 export default function MapPage() {
@@ -41,7 +42,7 @@ export default function MapPage() {
       style: MAP_STYLE,
       center: ANKADIVATO_CENTER,
       zoom: 16,
-      minZoom: 15,
+      minZoom: 15.5,         // ne peut pas dézoomer hors du quartier
       maxZoom: 18.5,
       maxBounds: ANKADIVATO_BOUNDS,
       pitch: 30,
@@ -95,10 +96,33 @@ export default function MapPage() {
       /* Pill marker element */
       const el = document.createElement('div')
       el.className = 'gco-marker'
+      // Spray can marker SVG — style street art
       el.innerHTML = `
         <div class="gco-marker-inner" data-id="${f.id}">
-          <div class="gco-marker-dot"></div>
-          <span class="gco-marker-label">${f.titre.length > 10 ? f.titre.slice(0, 9) + '…' : f.titre}</span>
+          <div class="gco-marker-wrap">
+            <svg class="gco-spray-icon" viewBox="0 0 40 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Spray burst particles -->
+              <circle cx="34" cy="7"  r="1.5" class="gco-spray-dot d1"/>
+              <circle cx="37" cy="11" r="1"   class="gco-spray-dot d2"/>
+              <circle cx="36" cy="5"  r="1"   class="gco-spray-dot d3"/>
+              <circle cx="39" cy="8"  r="1.2" class="gco-spray-dot d4"/>
+              <circle cx="33" cy="4"  r="0.8" class="gco-spray-dot d5"/>
+              <!-- Can body -->
+              <rect x="10" y="14" width="18" height="28" rx="5" fill="currentColor"/>
+              <!-- Can top cap -->
+              <rect x="13" y="9" width="12" height="7" rx="3" fill="currentColor" opacity="0.75"/>
+              <!-- Nozzle -->
+              <rect x="21" y="7" width="11" height="5" rx="2.5" fill="currentColor"/>
+              <!-- Label stripe -->
+              <rect x="10" y="24" width="18" height="8" rx="0" fill="white" opacity="0.15"/>
+              <!-- Button on top -->
+              <circle cx="17" cy="11" r="2.5" fill="white" opacity="0.3"/>
+              <!-- Pin dot at bottom -->
+              <circle cx="19" cy="48" r="3" fill="currentColor"/>
+              <line x1="19" y1="42" x2="19" y2="45" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <span class="gco-marker-label">${f.titre.length > 9 ? f.titre.slice(0, 8) + '…' : f.titre}</span>
+          </div>
         </div>`
 
       el.addEventListener('click', () => {
@@ -306,58 +330,73 @@ export default function MapPage() {
 
         .gco-marker-inner {
           display: flex;
+          flex-direction: column;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
+          color: #ff3b1f;
+          transition: transform 0.2s, color 0.2s;
+          transform-origin: bottom center;
+          position: relative;
+        }
+
+        .gco-marker-wrap {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 3px;
+        }
+
+        .gco-spray-icon {
+          width: 36px;
+          height: 46px;
+          filter: drop-shadow(0 3px 8px rgba(255,59,31,0.45));
+          transition: filter 0.2s, transform 0.2s;
+        }
+
+        /* Spray dot particles */
+        .gco-spray-dot {
+          fill: #ff3b1f;
+          opacity: 0;
+          animation: sprayPulse 1.8s ease-in-out infinite;
+        }
+        .d1 { animation-delay: 0s;    }
+        .d2 { animation-delay: 0.25s; }
+        .d3 { animation-delay: 0.5s;  }
+        .d4 { animation-delay: 0.75s; }
+        .d5 { animation-delay: 1s;    }
+
+        .gco-marker-label {
           background: #1a1a1a;
           color: #fff;
           font-family: var(--font-display);
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.03em;
-          padding: 7px 13px 7px 9px;
-          border-radius: 24px;
-          box-shadow: 0 3px 12px rgba(0,0,0,0.25);
-          transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
-          transform-origin: bottom center;
-          position: relative;
+          font-size: 10px;
+          letter-spacing: 0.05em;
+          padding: 3px 8px;
+          border-radius: 10px;
           white-space: nowrap;
-        }
-
-        .gco-marker-inner::after {
-          content: '';
-          position: absolute;
-          bottom: -7px;
-          left: 50%;
-          transform: translateX(-50%);
-          border-left: 5px solid transparent;
-          border-right: 5px solid transparent;
-          border-top: 7px solid #1a1a1a;
-          transition: border-top-color 0.2s;
-        }
-
-        .gco-marker-inner:hover,
-        .gco-marker-inner.active {
-          background: #ff3b1f;
-          box-shadow: 0 4px 20px rgba(255,59,31,0.4);
-          transform: scale(1.08) translateY(-2px);
-        }
-
-        .gco-marker-inner.active::after,
-        .gco-marker-inner:hover::after {
-          border-top-color: #ff3b1f;
-        }
-
-        .gco-marker-dot {
-          width: 7px; height: 7px;
-          border-radius: 50%;
-          background: #ff3b1f;
-          flex-shrink: 0;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
           transition: background 0.2s;
         }
 
-        .gco-marker-inner:hover .gco-marker-dot,
-        .gco-marker-inner.active .gco-marker-dot {
-          background: rgba(255,255,255,0.8);
+        .gco-marker-inner:hover .gco-spray-icon,
+        .gco-marker-inner.active .gco-spray-icon {
+          filter: drop-shadow(0 4px 14px rgba(255,59,31,0.7));
+          transform: scale(1.12) translateY(-3px);
+        }
+
+        .gco-marker-inner:hover .gco-marker-label,
+        .gco-marker-inner.active .gco-marker-label {
+          background: #ff3b1f;
+        }
+
+        .gco-marker-inner.active .gco-spray-dot,
+        .gco-marker-inner:hover .gco-spray-dot {
+          fill: #ff3b1f;
+        }
+
+        @keyframes sprayPulse {
+          0%, 100% { opacity: 0;   transform: scale(0.5) translate(0,0); }
+          50%       { opacity: 0.9; transform: scale(1.2) translate(2px,-2px); }
         }
 
         /* Mapbox overrides */

@@ -1,16 +1,18 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { getFresqueBySlug } from '../lib/supabase.js'
-import { ArrowLeft, MapPin, Calendar, Download, Instagram, Youtube, Music } from 'lucide-react'
+import { ArrowLeft, MapPin, Calendar, Download, Instagram, Youtube, Music, Images, Globe } from 'lucide-react'
 import PanoViewer from '../components/PanoViewer.jsx'
+import PhotoGallery from '../components/PhotoGallery.jsx'
 
 export default function FrequePage() {
   const { slug } = useParams()
-  const [fresque, setFresque] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [fresque, setFresque]   = useState(null)
+  const [loading, setLoading]   = useState(true)
   const [qrDataUrl, setQrDataUrl] = useState('')
-  const [showQr, setShowQr] = useState(false)
+  const [showQr, setShowQr]     = useState(false)
+  const [viewMode, setViewMode] = useState('gallery') // 'gallery' | 'pano'
 
   useEffect(() => {
     getFresqueBySlug(slug).then(f => {
@@ -23,8 +25,7 @@ export default function FrequePage() {
   async function generateQR(s) {
     const url = `${window.location.origin}/fresque/${s}`
     const dataUrl = await QRCode.toDataURL(url, {
-      width: 300,
-      margin: 2,
+      width: 300, margin: 2,
       color: { dark: '#0a0a0a', light: '#f5f0e8' },
     })
     setQrDataUrl(dataUrl)
@@ -50,6 +51,7 @@ export default function FrequePage() {
   )
 
   const { artiste } = fresque
+  const photos = fresque.photos?.length ? fresque.photos : [fresque.photo_url]
 
   return (
     <div style={{ minHeight: '100svh', animation: 'fadeUp 0.4s ease' }}>
@@ -58,22 +60,58 @@ export default function FrequePage() {
       <div style={{ padding: '16px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Link to="/carte" style={{
           display: 'flex', alignItems: 'center', gap: '6px',
-          fontFamily: 'var(--font-display)', fontSize: '10px',
+          fontFamily: 'var(--font-display)', fontSize: '11px',
           color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em',
         }}>
           <ArrowLeft size={12} /> Carte
         </Link>
+
+        {/* View mode toggle */}
+        <div style={{
+          display: 'flex',
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          borderRadius: '8px',
+          padding: '3px',
+          gap: '2px',
+        }}>
+          {[
+            { key: 'gallery', icon: Images,  label: 'Photos' },
+            { key: 'pano',    icon: Globe,   label: '360°' },
+          ].map(({ key, icon: Icon, label }) => (
+            <button
+              key={key}
+              onClick={() => setViewMode(key)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '6px 10px', borderRadius: '6px',
+                fontFamily: 'var(--font-display)', fontSize: '10px',
+                letterSpacing: '0.06em', textTransform: 'uppercase',
+                background: viewMode === key ? 'var(--accent)' : 'transparent',
+                color: viewMode === key ? '#fff' : 'var(--muted)',
+                border: 'none', cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <Icon size={12} />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Title */}
-      <div style={{ padding: '0 20px 16px' }}>
+      <div style={{ padding: '0 20px 14px' }}>
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '44px', lineHeight: 0.9, letterSpacing: '0.02em' }}>
           {fresque.titre}
         </h1>
       </div>
 
-      {/* Panoramic 3D viewer */}
-      <PanoViewer imageUrl={fresque.photo_url} titre={fresque.titre} />
+      {/* Media viewer */}
+      {viewMode === 'gallery'
+        ? <PhotoGallery photos={photos} titre={fresque.titre} />
+        : <PanoViewer imageUrl={fresque.photo_url} titre={fresque.titre} />
+      }
 
       {/* Tags */}
       {fresque.tags?.length > 0 && (
@@ -91,17 +129,29 @@ export default function FrequePage() {
       )}
 
       {/* Meta */}
-      <div style={{ padding: '16px 20px', display: 'flex', gap: '20px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <MapPin size={12} color="var(--muted)" />
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: 'var(--muted)' }}>{fresque.adresse}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Calendar size={12} color="var(--muted)" />
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: 'var(--muted)' }}>
-            {new Date(fresque.date_creation).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
-          </span>
-        </div>
+      <div style={{ padding: '16px 20px', display: 'flex', gap: '20px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+        {fresque.adresse && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <MapPin size={12} color="var(--muted)" />
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: 'var(--muted)' }}>{fresque.adresse}</span>
+          </div>
+        )}
+        {fresque.date_creation && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Calendar size={12} color="var(--muted)" />
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: 'var(--muted)' }}>
+              {new Date(fresque.date_creation).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
+            </span>
+          </div>
+        )}
+        {photos.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Images size={12} color="var(--muted)" />
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: 'var(--muted)' }}>
+              {photos.length} photos
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Description */}
@@ -115,16 +165,14 @@ export default function FrequePage() {
       {artiste && (
         <Link to={`/artiste/${artiste.id}`} style={{
           display: 'flex', alignItems: 'center', gap: '16px',
-          padding: '20px',
-          borderBottom: '1px solid var(--border)',
+          padding: '20px', borderBottom: '1px solid var(--border)',
           transition: 'opacity 0.2s',
         }}
           onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
           onMouseLeave={e => e.currentTarget.style.opacity = '1'}
         >
           <img
-            src={artiste.photo_url}
-            alt={artiste.nom}
+            src={artiste.photo_url} alt={artiste.nom}
             style={{ width: '52px', height: '52px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent)' }}
           />
           <div style={{ flex: 1 }}>
@@ -138,7 +186,7 @@ export default function FrequePage() {
       )}
 
       {/* Liens artiste */}
-      {artiste && (
+      {artiste && (artiste.instagram || artiste.soundcloud || artiste.youtube) && (
         <div style={{ display: 'flex', gap: '12px', padding: '20px', borderBottom: '1px solid var(--border)' }}>
           {artiste.instagram && (
             <a href={artiste.instagram} target="_blank" rel="noopener noreferrer" style={{
@@ -174,7 +222,7 @@ export default function FrequePage() {
       )}
 
       {/* QR Code section */}
-      <div style={{ padding: '24px 20px 40px' }}>
+      <div style={{ padding: '24px 20px 80px' }}>
         <button
           onClick={() => setShowQr(!showQr)}
           style={{
@@ -183,12 +231,8 @@ export default function FrequePage() {
             border: '1px solid var(--border)',
             color: 'var(--paper)',
             fontFamily: 'var(--font-display)',
-            fontSize: '11px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            padding: '14px',
-            borderRadius: 'var(--radius)',
-            transition: 'all 0.2s',
+            fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em',
+            padding: '14px', borderRadius: 'var(--radius)', transition: 'all 0.2s',
           }}
         >
           {showQr ? '↑ Masquer le QR code' : '↓ QR code de cette fresque'}
@@ -200,27 +244,19 @@ export default function FrequePage() {
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px',
             animation: 'fadeUp 0.3s ease',
           }}>
-            <div style={{
-              background: 'var(--paper)',
-              padding: '16px',
-              borderRadius: 'var(--radius)',
-              display: 'inline-block',
-            }}>
+            <div style={{ background: 'var(--paper)', padding: '16px', borderRadius: 'var(--radius)' }}>
               <img src={qrDataUrl} alt="QR code" style={{ width: '160px', height: '160px' }} />
             </div>
             <p style={{ fontFamily: 'var(--font-display)', fontSize: '10px', color: 'var(--muted)', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
               Scanne pour ouvrir cette fiche
             </p>
-            <button
-              onClick={downloadQR}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px',
-                background: 'var(--accent)', color: '#fff',
-                fontFamily: 'var(--font-display)', fontSize: '11px',
-                textTransform: 'uppercase', letterSpacing: '0.1em',
-                padding: '12px 20px', borderRadius: 'var(--radius)',
-              }}
-            >
+            <button onClick={downloadQR} style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: 'var(--accent)', color: '#fff',
+              fontFamily: 'var(--font-display)', fontSize: '11px',
+              textTransform: 'uppercase', letterSpacing: '0.1em',
+              padding: '12px 20px', borderRadius: 'var(--radius)',
+            }}>
               <Download size={14} /> Télécharger PNG
             </button>
           </div>

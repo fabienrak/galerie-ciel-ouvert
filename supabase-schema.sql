@@ -53,3 +53,7 @@ create policy "Public photos" on storage.objects
   for select using (bucket_id = 'photos');
 create policy "Auth upload photos" on storage.objects
   for insert with check (bucket_id = 'photos' and auth.role() = 'authenticated');
+
+-- ── Ajout colonne photos multiples ──────────────────────────
+-- Ajoute cette migration si la table fresques existe déjà
+alter table fresques add column if not exists photos text[] default '{}';

@@ -80,11 +80,17 @@ export default function AdminPage() {
     e.preventDefault()
     setStatus(null)
     try {
+      const extraPhotos = fresque.photos_input
+        .split('\n').map(u => u.trim()).filter(Boolean)
+      const photos = fresque.photo_url
+        ? [fresque.photo_url, ...extraPhotos]
+        : extraPhotos
       const payload = {
         ...fresque,
         lat: parseFloat(fresque.lat),
         lng: parseFloat(fresque.lng),
         tags: fresque.tags.split(',').map(t => t.trim()).filter(Boolean),
+        photos,
       }
       if (isConfigured()) {
         await addFresque(payload)
@@ -98,7 +104,7 @@ export default function AdminPage() {
       setQrDataUrl(qr)
       setLastSlug(fresque.slug)
       setStatus('ok')
-      setFresque({ titre: '', slug: '', description: '', adresse: '', lat: '', lng: '', photo_url: '', artiste_id: '', date_creation: new Date().toISOString().slice(0, 10), tags: '' })
+      setFresque({ titre: '', slug: '', description: '', adresse: '', lat: '', lng: '', photo_url: '', photos_input: '', artiste_id: '', date_creation: new Date().toISOString().slice(0, 10), tags: '' })
     } catch {
       setStatus('error')
     }
@@ -214,6 +220,7 @@ export default function AdminPage() {
             </div>
             <Input label="URL Photo" type="url" value={fresque.photo_url} onChange={e => setF('photo_url', e.target.value)} />
             <Input label="Date de création" type="date" value={fresque.date_creation} onChange={e => setF('date_creation', e.target.value)} />
+            <Input label="Photos supplémentaires (une URL par ligne)" type="textarea" value={fresque.photos_input} onChange={e => setF('photos_input', e.target.value)} placeholder={"https://...photo2.jpg\nhttps://...photo3.jpg"} />
             <Input label="Tags (séparés par virgule)" value={fresque.tags} onChange={e => setF('tags', e.target.value)} placeholder="hip-hop, mural, rouge" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <label style={{ fontFamily: 'var(--font-display)', fontSize: '10px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
