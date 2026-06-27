@@ -1,8 +1,9 @@
-# 🎨 Galerie à Ciel Ouvert
+# 🎨 Galerie à Ciel Ouvert - ANKADIVATO
 
-> Le quartier comme musée. Explore les fresques, découvre les artistes.
+Galerie à ciel ouvert dans le quartier d'Ankadivato Antananarivo 101. 
+Transformer le quartier en Vraie galerie d'art (Street Art, Graffiti, Fresque, ...) pour les publics. Projet initié par les Crews, cette application est une guide pour les traces de ces art dans le quartier
 
-PWA mobile-first pour cartographier et valoriser le street art du quartier **Ankadivato**, Antananarivo — un projet numérique au service d'un collectif RAP & graffiti malagasy.
+## Stack technique
 
 ---
 
@@ -85,7 +86,26 @@ VITE_MAPBOX_TOKEN=pk.eyJ1...ton-token-mapbox
 npm run dev
 ```
 
-### Build production
+Sans `.env`, l'app tourne en **mode démo** avec des données fictives.
+
+## Supabase — mise en place
+
+1. Crée un projet sur [supabase.com](https://supabase.com)
+2. Va dans **SQL Editor** et colle le contenu de `supabase-schema.sql`
+3. Copie l'URL et la clé anon dans ton `.env`
+
+## Structure des pages
+
+| Route | Page |
+|-------|------|
+| `/` | Accueil + liste des fresques |
+| `/carte` | Carte Leaflet interactive |
+| `/fresque/:slug` | Fiche fresque + QR code |
+| `/artistes` | Liste du crew |
+| `/artiste/:id` | Profil artiste |
+| `/admin` | Ajouter fresque / artiste |
+
+## Déploiement Netlify (Actuellement)
 
 ```bash
 npm run build
