@@ -19,6 +19,37 @@ export const supabase = isSupabaseConfigured()
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null
 
+const MOCK_VIEWS_STORAGE_KEY = 'gco_mock_fresque_views'
+
+function getStoredMockViews() {
+  if (typeof localStorage === 'undefined') return {}
+
+  try {
+    return JSON.parse(localStorage.getItem(MOCK_VIEWS_STORAGE_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function setStoredMockViews(views) {
+  if (typeof localStorage === 'undefined') return
+
+  try {
+    localStorage.setItem(MOCK_VIEWS_STORAGE_KEY, JSON.stringify(views))
+  } catch {
+    // Ignore storage errors in private mode.
+  }
+}
+
+function withMockViews(fresque) {
+  if (!fresque) return null
+  const storedViews = getStoredMockViews()
+  return {
+    ...fresque,
+    views: Number(storedViews[fresque.slug] ?? fresque.views ?? 0),
+  }
+}
+
 // ─── Mock data (utilisé si Supabase n'est pas configuré) ───────────────────
 export const MOCK_ARTISTES = [
   {
@@ -75,6 +106,7 @@ export const MOCK_FRESQUES = [
     adresse: 'Rue Andrianaivoravelona, Analakely',
     photo_url: 'https://picsum.photos/seed/fresque1/800/500',
     photos: ['https://picsum.photos/seed/fresque1/800/500','https://picsum.photos/seed/fresque1b/800/500','https://picsum.photos/seed/fresque1c/800/500'],
+    views: 128,
     artiste_id: 'a1',
     artiste: MOCK_ARTISTES[0],
     tags: ['hommage', 'culture', 'ancestral'],
@@ -90,6 +122,7 @@ export const MOCK_FRESQUES = [
     adresse: 'Av. de l\'Indépendance, Analakely',
     photo_url: 'https://picsum.photos/seed/fresque2/800/500',
     photos: ['https://picsum.photos/seed/fresque2/800/500','https://picsum.photos/seed/fresque2b/800/500'],
+    views: 94,
     artiste_id: 'a2',
     artiste: MOCK_ARTISTES[1],
     tags: ['hip-hop', 'lettrage', 'couleur'],
@@ -105,6 +138,7 @@ export const MOCK_FRESQUES = [
     adresse: 'Rue Rainizanabololona, Tsaralalana',
     photo_url: 'https://picsum.photos/seed/fresque3/800/500',
     photos: ['https://picsum.photos/seed/fresque3/800/500','https://picsum.photos/seed/fresque3b/800/500','https://picsum.photos/seed/fresque3c/800/500'],
+    views: 211,
     artiste_id: 'a3',
     artiste: MOCK_ARTISTES[2],
     tags: ['musique', 'poésie', 'bleu'],
@@ -120,6 +154,7 @@ export const MOCK_FRESQUES = [
     adresse: 'Rue Rambolamanana, Isoraka',
     photo_url: 'https://picsum.photos/seed/fresque4/800/500',
     photos: ['https://picsum.photos/seed/fresque4/800/500','https://picsum.photos/seed/fresque4b/800/500'],
+    views: 76,
     artiste_id: 'a4',
     artiste: MOCK_ARTISTES[3],
     tags: ['rap', 'feu', 'energie'],
@@ -135,6 +170,7 @@ export const MOCK_FRESQUES = [
     adresse: 'Pl. de l\'Indépendance, Analakely',
     photo_url: 'https://picsum.photos/seed/fresque5/800/500',
     photos: ['https://picsum.photos/seed/fresque5/800/500','https://picsum.photos/seed/fresque5b/800/500'],
+    views: 143,
     artiste_id: 'a1',
     artiste: MOCK_ARTISTES[0],
     tags: ['portrait', 'identité', 'noir et blanc'],
@@ -143,7 +179,7 @@ export const MOCK_FRESQUES = [
 
 // ─── Fonctions de data (Supabase ou mock) ──────────────────────────────────
 export async function getFresques() {
-  if (!isSupabaseConfigured()) return MOCK_FRESQUES
+  if (!isSupabaseConfigured()) return MOCK_FRESQUES.map(withMockViews)
   const { data, error } = await supabase
     .from('fresques')
     .select('*, artiste:artistes(*)')
@@ -153,7 +189,7 @@ export async function getFresques() {
 }
 
 export async function getFresqueBySlug(slug) {
-  if (!isSupabaseConfigured()) return MOCK_FRESQUES.find(f => f.slug === slug) || null
+  if (!isSupabaseConfigured()) return withMockViews(MOCK_FRESQUES.find(f => f.slug === slug)) || null
   const { data, error } = await supabase
     .from('fresques')
     .select('*, artiste:artistes(*)')
@@ -161,6 +197,32 @@ export async function getFresqueBySlug(slug) {
     .single()
   if (error) throw error
   return data
+}
+
+export async function incrementFresqueViews(slug) {
+  if (!slug) return null
+
+  if (!isSupabaseConfigured()) {
+    const fresque = MOCK_FRESQUES.find(f => f.slug === slug)
+    if (!fresque) return null
+
+    const storedViews = getStoredMockViews()
+    const currentViews = Number(storedViews[slug] ?? fresque.views ?? 0)
+    const nextViews = currentViews + 1
+    setStoredMockViews({ ...storedViews, [slug]: nextViews })
+    return nextViews
+  }
+
+  const { data, error } = await supabase.rpc('increment_fresque_views', {
+    fresque_slug: slug,
+  })
+
+  if (error) {
+    console.warn('Impossible d’incrémenter les vues:', error)
+    return null
+  }
+
+  return Number(data)
 }
 
 export async function getArtistes() {

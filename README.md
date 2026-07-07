@@ -20,8 +20,10 @@ Transformer le quartier en Vraie galerie d'art (Street Art, Graffiti, Fresque, .
 ### Côté public
 - **Splash screen animé** — les lettres AKDVT se tracent trait par trait en style graffiti au lancement
 - **Page d'accueil** avec slideshow automatique des fresques en arrière-plan (effet Ken Burns)
-- **Carte interactive Mapbox** avec style custom, bâtiments 3D, markers pill-style et bottom sheet
+- **Carte interactive Mapbox** avec style custom, recherche, filtres artiste/tag, bâtiments 3D, markers photo et bottom sheet
 - **Fiche fresque** avec viewer panoramique 3D (Three.js) — drag, pinch zoom, gyroscope mobile
+- **Partage natif** des fiches fresques avec fallback copie du lien
+- **Compteur de vues** par fresque
 - **Profil artiste** avec bio, spécialité, liens réseaux sociaux (Instagram, SoundCloud, YouTube)
 - **QR code** téléchargeable sur chaque fiche fresque pour coller sur le mur physique
 - **PWA installable** sur Android et iOS avec cache offline des tuiles carte
@@ -99,7 +101,7 @@ Sans `.env`, l'app tourne en **mode démo** avec des données fictives.
 | Route | Page |
 |-------|------|
 | `/` | Accueil + liste des fresques |
-| `/carte` | Carte Leaflet interactive |
+| `/carte` | Carte Mapbox interactive |
 | `/fresque/:slug` | Fiche fresque + QR code |
 | `/artistes` | Liste du crew |
 | `/artiste/:id` | Profil artiste |
@@ -123,7 +125,7 @@ Colle le contenu de `supabase-schema.sql` dans **SQL Editor → Run** :
 ```sql
 -- Tables créées :
 -- artistes (id, nom, specialite, bio, photo_url, instagram, soundcloud, youtube)
--- fresques  (id, slug, titre, description, lat, lng, adresse, photo_url, tags[], artiste_id)
+-- fresques  (id, slug, titre, description, lat, lng, adresse, photo_url, photos[], views, tags[], artiste_id)
 ```
 
 ### Données de démo

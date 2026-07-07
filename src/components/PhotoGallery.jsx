@@ -8,8 +8,8 @@ export default function PhotoGallery({ photos = [], titre = '' }) {
   const [offset, setOffset]         = useState(0)
   const trackRef = useRef(null)
 
-  const count = photos.length
-  if (count === 0) return null
+  const cleanPhotos = Array.from(new Set(photos.filter(Boolean)))
+  const count = cleanPhotos.length
 
   /* ── Swipe handlers ── */
   function onPointerDown(e) {
@@ -33,6 +33,10 @@ export default function PhotoGallery({ photos = [], titre = '' }) {
   function prev() { if (activeIdx > 0) setActiveIdx(i => i - 1) }
   function next() { if (activeIdx < count - 1) setActiveIdx(i => i + 1) }
 
+  useEffect(() => {
+    if (activeIdx >= count) setActiveIdx(0)
+  }, [activeIdx, count])
+
   /* Keyboard nav in lightbox */
   useEffect(() => {
     if (!lightbox) return
@@ -44,6 +48,8 @@ export default function PhotoGallery({ photos = [], titre = '' }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [lightbox, activeIdx])
+
+  if (count === 0) return null
 
   return (
     <>
@@ -74,7 +80,7 @@ export default function PhotoGallery({ photos = [], titre = '' }) {
             transform: `translateX(calc(${-activeIdx * (100 / count)}% + ${offset / count}px))`,
             transition: dragStart !== null ? 'none' : 'transform 0.35s cubic-bezier(0.4,0,0.2,1)',
           }}>
-            {photos.map((url, i) => (
+            {cleanPhotos.map((url, i) => (
               <div
                 key={i}
                 style={{
@@ -156,7 +162,7 @@ export default function PhotoGallery({ photos = [], titre = '' }) {
             transform: 'translateX(-50%)',
             display: 'flex', gap: '6px',
           }}>
-            {photos.map((_, i) => (
+            {cleanPhotos.map((_, i) => (
               <button
                 key={i}
                 onClick={() => setActiveIdx(i)}
@@ -181,7 +187,7 @@ export default function PhotoGallery({ photos = [], titre = '' }) {
           overflowX: 'auto',
           scrollbarWidth: 'none',
         }}>
-          {photos.map((url, i) => (
+          {cleanPhotos.map((url, i) => (
             <button
               key={i}
               onClick={() => setActiveIdx(i)}
@@ -213,7 +219,7 @@ export default function PhotoGallery({ photos = [], titre = '' }) {
         >
           {/* Image */}
           <img
-            src={photos[activeIdx]}
+            src={cleanPhotos[activeIdx]}
             alt={`${titre} — photo ${activeIdx + 1}`}
             onClick={e => e.stopPropagation()}
             style={{

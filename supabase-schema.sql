@@ -26,6 +26,7 @@ create table if not exists fresques (
   lng             float8 not null,
   adresse         text,
   photo_url       text,
+  views           integer not null default 0,
   tags            text[],
   artiste_id      uuid references artistes(id) on delete set null,
   created_at      timestamptz default now()
@@ -57,3 +58,26 @@ create policy "Auth upload photos" on storage.objects
 -- ── Ajout colonne photos multiples ──────────────────────────
 -- Ajoute cette migration si la table fresques existe déjà
 alter table fresques add column if not exists photos text[] default '{}';
+
+-- ── Compteur de vues public, sans exposer d'update libre ─────
+alter table fresques add column if not exists views integer not null default 0;
+
+create or replace function increment_fresque_views(fresque_slug text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  next_views integer;
+begin
+  update fresques
+  set views = coalesce(views, 0) + 1
+  where slug = fresque_slug
+  returning views into next_views;
+
+  return coalesce(next_views, 0);
+end;
+$$;
+
+grant execute on function increment_fresque_views(text) to anon, authenticated;

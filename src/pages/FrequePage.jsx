@@ -1,10 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import QRCode from 'qrcode'
-import { getFresqueBySlug } from '../lib/supabase.js'
-import { ArrowLeft, MapPin, Calendar, Download, Instagram, Youtube, Music, Images, Globe } from 'lucide-react'
+import { getFresqueBySlug, incrementFresqueViews } from '../lib/supabase.js'
+import { ArrowLeft, Calendar, Check, Download, Eye, Globe, Images, Instagram, MapPin, Music, Share2, Youtube } from 'lucide-react'
 import PanoViewer from '../components/PanoViewer.jsx'
 import PhotoGallery from '../components/PhotoGallery.jsx'
+
+const countedViewSlugs = new Set()
+
+function getFresquePhotos(fresque) {
+  const photos = Array.isArray(fresque?.photos) ? fresque.photos : []
+  return Array.from(new Set([
+    fresque?.photo_url,
+    ...photos,
+  ].filter(Boolean)))
+}
 
 export default function FrequePage() {
   const { slug } = useParams()
@@ -13,14 +23,53 @@ export default function FrequePage() {
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [showQr, setShowQr]     = useState(false)
   const [viewMode, setViewMode] = useState('gallery') // 'gallery' | 'pano'
+  const [shareStatus, setShareStatus] = useState('')
+  const shareStatusTimer = useRef(null)
 
   useEffect(() => {
-    getFresqueBySlug(slug).then(f => {
-      setFresque(f)
-      setLoading(false)
-      if (f) generateQR(f.slug)
-    })
+    let mounted = true
+    setLoading(true)
+    setShareStatus('')
+
+    getFresqueBySlug(slug)
+      .then(f => {
+        if (!mounted) return
+        setFresque(f)
+        setLoading(false)
+        if (f) {
+          generateQR(f.slug)
+          registerView(f.slug)
+        }
+      })
+      .catch(error => {
+        console.error('Erreur de chargement de la fresque:', error)
+        if (!mounted) return
+        setFresque(null)
+        setLoading(false)
+      })
+
+    async function registerView(fresqueSlug) {
+      if (countedViewSlugs.has(fresqueSlug)) return
+      countedViewSlugs.add(fresqueSlug)
+
+      const views = await incrementFresqueViews(fresqueSlug)
+      if (!mounted || !Number.isFinite(Number(views))) return
+
+      setFresque(prev => (
+        prev?.slug === fresqueSlug
+          ? { ...prev, views: Number(views) }
+          : prev
+      ))
+    }
+
+    return () => {
+      mounted = false
+    }
   }, [slug])
+
+  useEffect(() => () => {
+    if (shareStatusTimer.current) clearTimeout(shareStatusTimer.current)
+  }, [])
 
   async function generateQR(s) {
     const url = `${window.location.origin}/fresque/${s}`
@@ -38,6 +87,56 @@ export default function FrequePage() {
     a.click()
   }
 
+  function showShareStatus(message) {
+    setShareStatus(message)
+    if (shareStatusTimer.current) clearTimeout(shareStatusTimer.current)
+    shareStatusTimer.current = setTimeout(() => setShareStatus(''), 1800)
+  }
+
+  async function copyShareLink(url) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url)
+      return
+    }
+
+    const input = document.createElement('textarea')
+    input.value = url
+    input.setAttribute('readonly', '')
+    input.style.position = 'fixed'
+    input.style.top = '-999px'
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+  }
+
+  async function shareFresque() {
+    if (!fresque) return
+
+    const url = `${window.location.origin}/fresque/${fresque.slug}`
+    const shareData = {
+      title: fresque.titre || 'Galerie à Ciel Ouvert',
+      text: `Découvre cette fresque de Galerie à Ciel Ouvert : ${fresque.titre}`,
+      url,
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData)
+        return
+      } catch (error) {
+        if (error?.name === 'AbortError') return
+      }
+    }
+
+    try {
+      await copyShareLink(url)
+      showShareStatus('Lien copié')
+    } catch {
+      showShareStatus('Copie impossible')
+    }
+  }
+
   if (loading) return (
     <div style={{ padding: '40px 20px', fontFamily: 'var(--font-display)', fontSize: '12px', color: 'var(--muted)' }}>
       Chargement...
@@ -51,7 +150,8 @@ export default function FrequePage() {
   )
 
   const { artiste } = fresque
-  const photos = fresque.photos?.length ? fresque.photos : [fresque.photo_url]
+  const photos = getFresquePhotos(fresque)
+  const views = Number(fresque.views || 0)
 
   return (
     <div style={{ minHeight: '100svh', animation: 'fadeUp 0.4s ease' }}>
@@ -105,6 +205,50 @@ export default function FrequePage() {
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '44px', lineHeight: 0.9, letterSpacing: '0.02em' }}>
           {fresque.titre}
         </h1>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          marginTop: '14px',
+          flexWrap: 'wrap',
+        }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            color: 'var(--muted)',
+            fontFamily: 'var(--font-display)',
+            fontSize: '11px',
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+          }}>
+            <Eye size={13} color="var(--accent)" />
+            {views} vues
+          </div>
+
+          <button
+            type="button"
+            onClick={shareFresque}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              minHeight: '36px',
+              padding: '0 13px',
+              borderRadius: '999px',
+              background: shareStatus === 'Lien copié' ? 'rgba(0,180,100,0.16)' : 'var(--accent)',
+              color: '#fff',
+              fontFamily: 'var(--font-display)',
+              fontSize: '10px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {shareStatus === 'Lien copié' ? <Check size={13} /> : <Share2 size={13} />}
+            {shareStatus || 'Partager'}
+          </button>
+        </div>
       </div>
 
       {/* Media viewer */}

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { getFresques } from '../lib/supabase.js'
-import { AlertTriangle, ArrowRight, Calendar, Crosshair, MapPin, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Calendar, Crosshair, MapPin, Search, X } from 'lucide-react'
 
 // ── Mets ta clé Mapbox ici ou dans .env ──────────────────
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'YOUR_MAPBOX_TOKEN'
@@ -45,6 +45,13 @@ function formatCreationDate(value) {
   return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
 }
 
+function normalizeText(value = '') {
+  return String(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
 export default function MapPage() {
   const mapContainer = useRef(null)
   const map          = useRef(null)
@@ -57,8 +64,48 @@ export default function MapPage() {
   const [loading, setLoading]     = useState(true)
   const [dataError, setDataError] = useState(null)
   const [mapError, setMapError]   = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [artistFilter, setArtistFilter] = useState('')
+  const [tagFilter, setTagFilter] = useState('')
 
-  const visibleFresques = useMemo(() => fresques.filter(hasValidCoordinates), [fresques])
+  const geolocatedFresques = useMemo(() => fresques.filter(hasValidCoordinates), [fresques])
+  const artistOptions = useMemo(() => {
+    const byId = new Map()
+    fresques.forEach(f => {
+      if (!f.artiste?.id || !f.artiste?.nom) return
+      byId.set(f.artiste.id, f.artiste.nom)
+    })
+    return Array.from(byId, ([id, nom]) => ({ id, nom })).sort((a, b) => a.nom.localeCompare(b.nom))
+  }, [fresques])
+  const tagOptions = useMemo(() => {
+    const tags = new Set()
+    fresques.forEach(f => {
+      if (!Array.isArray(f.tags)) return
+      f.tags.forEach(tag => {
+        if (tag) tags.add(tag)
+      })
+    })
+    return Array.from(tags).sort((a, b) => a.localeCompare(b))
+  }, [fresques])
+  const visibleFresques = useMemo(() => {
+    const q = normalizeText(searchTerm.trim())
+
+    return geolocatedFresques.filter(f => {
+      const tags = Array.isArray(f.tags) ? f.tags : []
+      const matchesSearch = !q || [
+        f.titre,
+        f.description,
+        f.adresse,
+        f.artiste?.nom,
+        ...tags,
+      ].some(value => normalizeText(value).includes(q))
+      const matchesArtist = !artistFilter || f.artiste?.id === artistFilter || f.artiste_id === artistFilter
+      const matchesTag = !tagFilter || tags.includes(tagFilter)
+
+      return matchesSearch && matchesArtist && matchesTag
+    })
+  }, [artistFilter, geolocatedFresques, searchTerm, tagFilter])
+  const filtersActive = Boolean(searchTerm.trim() || artistFilter || tagFilter)
   const selectedPhotoUrl = getPhotoUrl(selected)
   const selectedDate = formatCreationDate(selected?.date_creation)
 
@@ -293,16 +340,27 @@ export default function MapPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selected])
 
+  useEffect(() => {
+    if (!selected) return
+    if (visibleFresques.some(f => f.id === selected.id)) return
+    closePanel()
+  }, [selected, visibleFresques])
+
+  useEffect(() => {
+    if (!mapReady || !map.current || !filtersActive) return
+    window.requestAnimationFrame(() => focusFresques({ duration: 600 }))
+  }, [filtersActive, mapReady, visibleFresques])
+
   function clearActiveMarkers() {
     mapContainer.current
       ?.querySelectorAll('.gco-photo-marker')
       .forEach(m => m.classList.remove('active'))
   }
 
-  function focusFresques({ duration = 800, panelOpen = false } = {}) {
+  function focusFresques({ duration = 800, panelOpen = false, fresquesToFit = visibleFresques } = {}) {
     if (!map.current) return
 
-    if (visibleFresques.length === 0) {
+    if (fresquesToFit.length === 0) {
       map.current.flyTo({
         center: ANKADIVATO_CENTER,
         zoom: 16,
@@ -314,9 +372,9 @@ export default function MapPage() {
       return
     }
 
-    if (visibleFresques.length === 1) {
+    if (fresquesToFit.length === 1) {
       map.current.flyTo({
-        center: getLngLat(visibleFresques[0]),
+        center: getLngLat(fresquesToFit[0]),
         zoom: 17.2,
         pitch: 38,
         bearing: -8,
@@ -327,7 +385,7 @@ export default function MapPage() {
     }
 
     const bounds = new mapboxgl.LngLatBounds()
-    visibleFresques.forEach(f => bounds.extend(getLngLat(f)))
+    fresquesToFit.forEach(f => bounds.extend(getLngLat(f)))
     map.current.fitBounds(bounds, {
       padding: {
         top: 112,
@@ -349,6 +407,14 @@ export default function MapPage() {
   function resetView() {
     closePanel()
     focusFresques({ duration: 850 })
+  }
+
+  function clearFilters() {
+    setSearchTerm('')
+    setArtistFilter('')
+    setTagFilter('')
+    closePanel()
+    window.requestAnimationFrame(() => focusFresques({ duration: 700, fresquesToFit: geolocatedFresques }))
   }
 
   return (
@@ -394,6 +460,51 @@ export default function MapPage() {
         </span>
       </div>
 
+      {/* ── Search + filters ── */}
+      <div className="gco-map-search">
+        <div className="gco-map-search-row">
+          <Search size={15} color="#777" strokeWidth={2.2} />
+          <input
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Rechercher une fresque"
+            aria-label="Rechercher une fresque"
+          />
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              aria-label="Effacer la recherche et les filtres"
+              title="Effacer"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <div className="gco-map-filter-row">
+          <select
+            value={artistFilter}
+            onChange={e => setArtistFilter(e.target.value)}
+            aria-label="Filtrer par artiste"
+          >
+            <option value="">Tous les artistes</option>
+            {artistOptions.map(artist => (
+              <option key={artist.id} value={artist.id}>{artist.nom}</option>
+            ))}
+          </select>
+          <select
+            value={tagFilter}
+            onChange={e => setTagFilter(e.target.value)}
+            aria-label="Filtrer par tag"
+          >
+            <option value="">Tous les tags</option>
+            {tagOptions.map(tag => (
+              <option key={tag} value={tag}>{tag}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* ── Quick recenter ── */}
       <button
         type="button"
@@ -430,9 +541,15 @@ export default function MapPage() {
         </div>
       )}
 
-      {!loading && !dataError && visibleFresques.length === 0 && (
+      {!loading && !dataError && geolocatedFresques.length === 0 && (
         <div className="gco-map-toast">
           Aucune fresque géolocalisée pour le moment.
+        </div>
+      )}
+
+      {!loading && !dataError && geolocatedFresques.length > 0 && visibleFresques.length === 0 && (
+        <div className="gco-map-toast">
+          Aucun résultat pour ces filtres.
         </div>
       )}
 
@@ -753,9 +870,89 @@ export default function MapPage() {
           transform: translateX(-50%) translateY(0);
         }
 
+        .gco-map-search {
+          position: absolute;
+          top: 68px;
+          left: 16px;
+          right: 16px;
+          z-index: 12;
+          max-width: 560px;
+          margin: 0 auto;
+          display: grid;
+          gap: 8px;
+          pointer-events: none;
+        }
+
+        .gco-map-search-row,
+        .gco-map-filter-row {
+          pointer-events: auto;
+        }
+
+        .gco-map-search-row {
+          min-height: 42px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0 10px 0 12px;
+          border-radius: 14px;
+          background: rgba(255,255,255,0.94);
+          box-shadow: 0 4px 18px rgba(0,0,0,0.14);
+          backdrop-filter: blur(12px);
+        }
+
+        .gco-map-search-row input {
+          flex: 1;
+          min-width: 0;
+          height: 42px;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 12px;
+          letter-spacing: 0.04em;
+        }
+
+        .gco-map-search-row input::placeholder {
+          color: rgba(26,26,26,0.48);
+        }
+
+        .gco-map-search-row button {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background: rgba(26,26,26,0.08);
+          color: #1a1a1a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 auto;
+        }
+
+        .gco-map-filter-row {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          gap: 8px;
+        }
+
+        .gco-map-filter-row select {
+          min-width: 0;
+          height: 34px;
+          border: 0;
+          border-radius: 11px;
+          padding: 0 10px;
+          outline: 0;
+          background: rgba(26,26,26,0.84);
+          color: #fff;
+          font-family: var(--font-display);
+          font-size: 10px;
+          letter-spacing: 0.04em;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.16);
+        }
+
         /* Mapbox overrides */
         .mapboxgl-ctrl-top-right {
-          top: 16px !important;
+          top: 158px !important;
           right: 16px !important;
         }
         .mapboxgl-ctrl-top-right .mapboxgl-ctrl {
@@ -883,6 +1080,19 @@ export default function MapPage() {
 
           .gco-photo-marker-label {
             display: none;
+          }
+
+          .gco-map-search {
+            left: 12px;
+            right: 12px;
+          }
+
+          .gco-map-filter-row {
+            grid-template-columns: 1fr;
+          }
+
+          .mapboxgl-ctrl-top-right {
+            top: 196px !important;
           }
         }
 
