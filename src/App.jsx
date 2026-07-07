@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
 import AdminGate from './components/AdminGate.jsx'
+import InstallPrompt from './components/InstallPrompt.jsx'
 import HomePage from './pages/HomePage.jsx'
 import MapPage from './pages/MapPage.jsx'
 import FrequePage from './pages/FrequePage.jsx'
@@ -11,6 +12,7 @@ import AdminPage from './pages/AdminPage.jsx'
 export default function App() {
   return (
     <BrowserRouter>
+      <InstallPrompt />
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />

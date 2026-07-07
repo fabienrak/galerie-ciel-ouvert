@@ -1,10 +1,41 @@
 import { useState, useEffect } from 'react'
 import QRCode from 'qrcode'
-import { addFresque, addArtiste, getArtistes, MOCK_ARTISTES } from '../lib/supabase.js'
+import {
+  addFresque,
+  addArtiste,
+  getArtistes,
+  isSupabaseConfigured,
+  MOCK_ARTISTES,
+} from '../lib/supabase.js'
 import { Plus, Download, Check, AlertCircle } from 'lucide-react'
 
-const isConfigured = () =>
-  import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY
+const isConfigured = isSupabaseConfigured
+
+function getInitialFresque() {
+  return {
+    titre: '',
+    slug: '',
+    description: '',
+    adresse: '',
+    lat: '',
+    lng: '',
+    photo_url: '',
+    photos_input: '',
+    artiste_id: '',
+    date_creation: new Date().toISOString().slice(0, 10),
+    tags: '',
+  }
+}
+
+const INITIAL_ARTISTE = {
+  nom: '',
+  specialite: '',
+  bio: '',
+  photo_url: '',
+  instagram: '',
+  soundcloud: '',
+  youtube: '',
+}
 
 function Input({ label, ...props }) {
   return (
@@ -46,16 +77,8 @@ export default function AdminPage() {
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [lastSlug, setLastSlug] = useState('')
 
-  const [fresque, setFresque] = useState({
-    titre: '', slug: '', description: '', adresse: '',
-    lat: '', lng: '', photo_url: '', artiste_id: '',
-    date_creation: new Date().toISOString().slice(0, 10),
-    tags: '',
-  })
-  const [artiste, setArtiste] = useState({
-    nom: '', specialite: '', bio: '', photo_url: '',
-    instagram: '', soundcloud: '', youtube: '',
-  })
+  const [fresque, setFresque] = useState(getInitialFresque)
+  const [artiste, setArtiste] = useState(INITIAL_ARTISTE)
 
   useEffect(() => {
     const src = isConfigured() ? getArtistes() : Promise.resolve(MOCK_ARTISTES)
@@ -80,16 +103,23 @@ export default function AdminPage() {
     e.preventDefault()
     setStatus(null)
     try {
-      const extraPhotos = fresque.photos_input
+      const extraPhotos = (fresque.photos_input || '')
         .split('\n').map(u => u.trim()).filter(Boolean)
       const photos = fresque.photo_url
         ? [fresque.photo_url, ...extraPhotos]
         : extraPhotos
+      const tags = (fresque.tags || '').split(',').map(t => t.trim()).filter(Boolean)
       const payload = {
-        ...fresque,
+        titre: fresque.titre,
+        slug: fresque.slug,
+        description: fresque.description || null,
+        adresse: fresque.adresse || null,
         lat: parseFloat(fresque.lat),
         lng: parseFloat(fresque.lng),
-        tags: fresque.tags.split(',').map(t => t.trim()).filter(Boolean),
+        photo_url: fresque.photo_url || null,
+        artiste_id: fresque.artiste_id || null,
+        date_creation: fresque.date_creation || null,
+        tags,
         photos,
       }
       if (isConfigured()) {
@@ -104,7 +134,7 @@ export default function AdminPage() {
       setQrDataUrl(qr)
       setLastSlug(fresque.slug)
       setStatus('ok')
-      setFresque({ titre: '', slug: '', description: '', adresse: '', lat: '', lng: '', photo_url: '', photos_input: '', artiste_id: '', date_creation: new Date().toISOString().slice(0, 10), tags: '' })
+      setFresque(getInitialFresque())
     } catch {
       setStatus('error')
     }
@@ -116,7 +146,7 @@ export default function AdminPage() {
     try {
       if (isConfigured()) await addArtiste(artiste)
       setStatus('ok')
-      setArtiste({ nom: '', specialite: '', bio: '', photo_url: '', instagram: '', soundcloud: '', youtube: '' })
+      setArtiste(INITIAL_ARTISTE)
       const src = isConfigured() ? getArtistes() : Promise.resolve(MOCK_ARTISTES)
       src.then(setArtistes)
     } catch {

@@ -1,24 +1,73 @@
 import { useState, useEffect } from 'react'
 import { Lock, Eye, EyeOff } from 'lucide-react'
+import { isSupabaseConfigured, supabase } from '../lib/supabase.js'
 
 // Mot de passe admin — change cette valeur
 const ADMIN_PASSWORD = 'galerie2025'
 const SESSION_KEY    = 'gco_admin_auth'
+const USE_SUPABASE_AUTH = isSupabaseConfigured()
 
 export default function AdminGate({ children }) {
   const [unlocked, setUnlocked] = useState(false)
+  const [email, setEmail]       = useState('')
   const [input, setInput]       = useState('')
   const [showPwd, setShowPwd]   = useState(false)
   const [error, setError]       = useState(false)
   const [shake, setShake]       = useState(false)
+  const [checking, setChecking] = useState(USE_SUPABASE_AUTH)
+  const [submitting, setSubmitting] = useState(false)
 
-  // Persist session (sessionStorage — expire à la fermeture du navigateur)
+  // En mode Supabase, la session vient de Supabase Auth. En mode demo, on garde
+  // le mot de passe local existant pour pouvoir tester sans backend.
   useEffect(() => {
-    if (sessionStorage.getItem(SESSION_KEY) === '1') setUnlocked(true)
+    if (!USE_SUPABASE_AUTH) {
+      if (sessionStorage.getItem(SESSION_KEY) === '1') setUnlocked(true)
+      return
+    }
+
+    let mounted = true
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
+      setUnlocked(Boolean(data.session))
+      setChecking(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUnlocked(Boolean(session))
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
+    setError(false)
+
+    if (USE_SUPABASE_AUTH) {
+      setSubmitting(true)
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: input,
+      })
+      setSubmitting(false)
+
+      if (!authError) {
+        setUnlocked(true)
+        setInput('')
+        return
+      }
+
+      setError(true)
+      setShake(true)
+      setInput('')
+      setTimeout(() => setShake(false), 500)
+      return
+    }
+
     if (input === ADMIN_PASSWORD) {
       sessionStorage.setItem(SESSION_KEY, '1')
       setUnlocked(true)
@@ -30,6 +79,23 @@ export default function AdminGate({ children }) {
       setTimeout(() => setShake(false), 500)
     }
   }
+
+  if (checking) return (
+    <div style={{
+      minHeight: '100svh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'var(--ink)',
+      color: 'var(--muted)',
+      fontFamily: 'var(--font-display)',
+      fontSize: '12px',
+      textTransform: 'uppercase',
+      letterSpacing: '0.1em',
+    }}>
+      Vérification...
+    </div>
+  )
 
   if (unlocked) return children
 
@@ -74,7 +140,7 @@ export default function AdminGate({ children }) {
         marginBottom: '36px',
         textAlign: 'center',
       }}>
-        Zone réservée au crew
+        {USE_SUPABASE_AUTH ? 'Connexion Supabase requise' : 'Zone réservée au crew'}
       </p>
 
       {/* Form */}
@@ -86,13 +152,40 @@ export default function AdminGate({ children }) {
           animation: shake ? 'shakeForm 0.4s ease' : 'none',
         }}
       >
+        {USE_SUPABASE_AUTH && (
+          <input
+            type="email"
+            value={email}
+            onChange={e => { setEmail(e.target.value); setError(false) }}
+            placeholder="Email admin"
+            autoComplete="email"
+            autoFocus
+            required
+            style={{
+              width: '100%',
+              background: 'var(--card)',
+              border: `1px solid ${error ? 'var(--accent)' : 'var(--border)'}`,
+              borderRadius: 'var(--radius)',
+              color: 'var(--paper)',
+              fontFamily: 'var(--font-display)',
+              fontSize: '14px',
+              padding: '14px 16px',
+              outline: 'none',
+              transition: 'border-color 0.2s',
+              letterSpacing: '0.08em',
+              marginBottom: '10px',
+            }}
+          />
+        )}
+
         <div style={{ position: 'relative' }}>
           <input
             type={showPwd ? 'text' : 'password'}
             value={input}
             onChange={e => { setInput(e.target.value); setError(false) }}
             placeholder="Mot de passe"
-            autoFocus
+            autoComplete={USE_SUPABASE_AUTH ? 'current-password' : 'off'}
+            autoFocus={!USE_SUPABASE_AUTH}
             style={{
               width: '100%',
               background: 'var(--card)',
@@ -132,16 +225,17 @@ export default function AdminGate({ children }) {
             marginTop: '8px',
             animation: 'fadeUp 0.3s ease',
           }}>
-            Mot de passe incorrect
+            {USE_SUPABASE_AUTH ? 'Identifiants Supabase incorrects' : 'Mot de passe incorrect'}
           </p>
         )}
 
         <button
           type="submit"
+          disabled={submitting}
           style={{
             marginTop: '12px',
             width: '100%',
-            background: 'var(--accent)',
+            background: submitting ? 'var(--muted)' : 'var(--accent)',
             color: '#fff',
             fontFamily: 'var(--font-display)',
             fontSize: '11px',
@@ -150,10 +244,10 @@ export default function AdminGate({ children }) {
             padding: '14px',
             borderRadius: 'var(--radius)',
             border: 'none',
-            cursor: 'pointer',
+            cursor: submitting ? 'default' : 'pointer',
           }}
         >
-          Entrer
+          {submitting ? 'Connexion...' : 'Entrer'}
         </button>
       </form>
 

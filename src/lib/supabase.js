@@ -3,7 +3,21 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+export function isSupabaseConfigured() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false
+  if (SUPABASE_URL.includes('ton-projet') || SUPABASE_ANON_KEY.includes('ta-cle-anon')) return false
+
+  try {
+    new URL(SUPABASE_URL)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const supabase = isSupabaseConfigured()
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null
 
 // ─── Mock data (utilisé si Supabase n'est pas configuré) ───────────────────
 export const MOCK_ARTISTES = [
@@ -128,10 +142,8 @@ export const MOCK_FRESQUES = [
 ]
 
 // ─── Fonctions de data (Supabase ou mock) ──────────────────────────────────
-const isConfigured = () => SUPABASE_URL && SUPABASE_ANON_KEY
-
 export async function getFresques() {
-  if (!isConfigured()) return MOCK_FRESQUES
+  if (!isSupabaseConfigured()) return MOCK_FRESQUES
   const { data, error } = await supabase
     .from('fresques')
     .select('*, artiste:artistes(*)')
@@ -141,7 +153,7 @@ export async function getFresques() {
 }
 
 export async function getFresqueBySlug(slug) {
-  if (!isConfigured()) return MOCK_FRESQUES.find(f => f.slug === slug) || null
+  if (!isSupabaseConfigured()) return MOCK_FRESQUES.find(f => f.slug === slug) || null
   const { data, error } = await supabase
     .from('fresques')
     .select('*, artiste:artistes(*)')
@@ -152,7 +164,7 @@ export async function getFresqueBySlug(slug) {
 }
 
 export async function getArtistes() {
-  if (!isConfigured()) return MOCK_ARTISTES
+  if (!isSupabaseConfigured()) return MOCK_ARTISTES
   const { data, error } = await supabase
     .from('artistes')
     .select('*')
@@ -162,7 +174,7 @@ export async function getArtistes() {
 }
 
 export async function getArtisteById(id) {
-  if (!isConfigured()) return MOCK_ARTISTES.find(a => a.id === id) || null
+  if (!isSupabaseConfigured()) return MOCK_ARTISTES.find(a => a.id === id) || null
   const { data, error } = await supabase
     .from('artistes')
     .select('*, fresques(*)')
@@ -173,14 +185,14 @@ export async function getArtisteById(id) {
 }
 
 export async function addFresque(fresque) {
-  if (!isConfigured()) throw new Error('Supabase non configuré')
+  if (!isSupabaseConfigured()) throw new Error('Supabase non configuré')
   const { data, error } = await supabase.from('fresques').insert([fresque]).select().single()
   if (error) throw error
   return data
 }
 
 export async function addArtiste(artiste) {
-  if (!isConfigured()) throw new Error('Supabase non configuré')
+  if (!isSupabaseConfigured()) throw new Error('Supabase non configuré')
   const { data, error } = await supabase.from('artistes').insert([artiste]).select().single()
   if (error) throw error
   return data
