@@ -22,6 +22,7 @@ import {
   MapPin,
   Navigation,
   Search,
+  SlidersHorizontal,
   Trophy,
   X,
 } from 'lucide-react'
@@ -170,6 +171,7 @@ export default function MapPage() {
   const [locationError, setLocationError] = useState('')
   const [visitedPassport, setVisitedPassport] = useState(getVisitedPassport)
   const [topPanelOpen, setTopPanelOpen] = useState(false)
+  const [controlsModalOpen, setControlsModalOpen] = useState(false)
 
   const geolocatedFresques = useMemo(() => fresques.filter(hasValidCoordinates), [fresques])
   const artistOptions = useMemo(() => {
@@ -494,6 +496,17 @@ export default function MapPage() {
   }, [selected])
 
   useEffect(() => {
+    if (!controlsModalOpen) return
+
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') setControlsModalOpen(false)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [controlsModalOpen])
+
+  useEffect(() => {
     if (!nearbyMode || !activeNearbyFresque || selected) return
     setActiveMarkerById(activeNearbyFresque.id)
   }, [activeNearbyFresque?.id, nearbyMode, selected])
@@ -629,7 +642,7 @@ export default function MapPage() {
     fresquesToFit.forEach(f => bounds.extend(getLngLat(f)))
     map.current.fitBounds(bounds, {
       padding: {
-        top: 286,
+        top: controlsModalOpen ? 260 : 112,
         right: 64,
         bottom: panelOpen ? 230 : nearbyMode && userPosition ? 210 : 92,
         left: 64,
@@ -652,6 +665,7 @@ export default function MapPage() {
 
   function openTopFresque(fresque) {
     setTopPanelOpen(false)
+    setControlsModalOpen(false)
     openFresquePreview(fresque)
   }
 
@@ -687,6 +701,7 @@ export default function MapPage() {
     if (userPosition && !locating) {
       setNearbyMode(true)
       setNearbyIndex(0)
+      setControlsModalOpen(false)
       closePanel()
       return
     }
@@ -702,6 +717,7 @@ export default function MapPage() {
         setNearbyMode(true)
         setNearbyIndex(0)
         setLocating(false)
+        setControlsModalOpen(false)
         closePanel()
       },
       error => {
@@ -782,73 +798,128 @@ export default function MapPage() {
         </span>
       </div>
 
-      {/* ── Search + filters ── */}
-      <div className="gco-map-search">
-        <div className="gco-map-search-row">
-          <Search size={15} color="#777" strokeWidth={2.2} />
-          <input
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Rechercher une fresque"
-            aria-label="Rechercher une fresque"
-          />
-          {filtersActive && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              aria-label="Effacer la recherche et les filtres"
-              title="Effacer"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
-        <div className="gco-map-filter-row">
-          <select
-            value={artistFilter}
-            onChange={e => setArtistFilter(e.target.value)}
-            aria-label="Filtrer par artiste"
+      {/* ── Compact map actions ── */}
+      <div className="gco-map-toolbar">
+        <button
+          type="button"
+          className="gco-map-tool-button"
+          onClick={resetView}
+          aria-label="Recentrer sur les fresques"
+          title="Recentrer"
+          disabled={!mapReady}
+        >
+          <Crosshair size={17} strokeWidth={2.2} />
+        </button>
+
+        <button
+          type="button"
+          className={`gco-map-tool-button is-primary ${filtersActive || nearbyMode ? 'has-state' : ''}`}
+          onClick={() => setControlsModalOpen(true)}
+          aria-label="Ouvrir la recherche et les filtres"
+        >
+          <SlidersHorizontal size={16} strokeWidth={2.3} />
+          <span>{nearbyMode ? 'Proximité' : filtersActive ? 'Filtres' : 'Explorer'}</span>
+        </button>
+      </div>
+
+      {/* ── Controls modal ── */}
+      {controlsModalOpen && (
+        <div
+          className="gco-controls-backdrop"
+          onClick={() => setControlsModalOpen(false)}
+        >
+          <div
+            className="gco-controls-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Recherche et filtres de carte"
+            onClick={event => event.stopPropagation()}
           >
-            <option value="">Tous les artistes</option>
-            {artistOptions.map(artist => (
-              <option key={artist.id} value={artist.id}>{artist.nom}</option>
-            ))}
-          </select>
-          <select
-            value={tagFilter}
-            onChange={e => setTagFilter(e.target.value)}
-            aria-label="Filtrer par tag"
-          >
-            <option value="">Tous les tags</option>
-            {tagOptions.map(tag => (
-              <option key={tag} value={tag}>{tag}</option>
-            ))}
-          </select>
-        </div>
-        <div className="gco-passport-row">
-          <div className="gco-passport-summary">
-            <Award size={14} strokeWidth={2.3} />
-            <div>
-              <span>Passeport</span>
-              <strong>{visitedCount}/{geolocatedFresques.length} vues</strong>
+            <div className="gco-controls-modal-head">
+              <div>
+                <span>Explorer</span>
+                <strong>Recherche & filtres</strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => setControlsModalOpen(false)}
+                aria-label="Fermer les contrôles"
+              >
+                <X size={15} />
+              </button>
             </div>
-            <div className="gco-passport-bar" aria-hidden="true">
-              <i style={{ width: `${visitProgress}%` }} />
-            </div>
-          </div>
-          <button
-            type="button"
-            className={`gco-top-toggle ${topPanelOpen ? 'is-active' : ''}`}
-            onClick={() => {
-              setTopPanelOpen(open => !open)
-              setNearbyMode(false)
-            }}
-          >
-            <Trophy size={14} strokeWidth={2.3} />
-            Top
-          </button>
-        </div>
-        <div className="gco-nearby-launch-row">
+
+            <div className="gco-map-search">
+              <div className="gco-map-search-row">
+                <Search size={15} color="#777" strokeWidth={2.2} />
+                <input
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="Rechercher une fresque"
+                  aria-label="Rechercher une fresque"
+                />
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    aria-label="Effacer la recherche et les filtres"
+                    title="Effacer"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="gco-map-filter-row">
+                <select
+                  value={artistFilter}
+                  onChange={e => setArtistFilter(e.target.value)}
+                  aria-label="Filtrer par artiste"
+                >
+                  <option value="">Tous les artistes</option>
+                  {artistOptions.map(artist => (
+                    <option key={artist.id} value={artist.id}>{artist.nom}</option>
+                  ))}
+                </select>
+                <select
+                  value={tagFilter}
+                  onChange={e => setTagFilter(e.target.value)}
+                  aria-label="Filtrer par tag"
+                >
+                  <option value="">Tous les tags</option>
+                  {tagOptions.map(tag => (
+                    <option key={tag} value={tag}>{tag}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="gco-passport-row">
+                <div className="gco-passport-summary">
+                  <Award size={14} strokeWidth={2.3} />
+                  <div>
+                    <span>Passeport</span>
+                    <strong>{visitedCount}/{geolocatedFresques.length} vues</strong>
+                  </div>
+                  <div className="gco-passport-bar" aria-hidden="true">
+                    <i style={{ width: `${visitProgress}%` }} />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`gco-top-toggle ${topPanelOpen ? 'is-active' : ''}`}
+                  onClick={() => {
+                    const nextTopState = !topPanelOpen
+                    setTopPanelOpen(nextTopState)
+                    setNearbyMode(false)
+                    if (nextTopState) setControlsModalOpen(false)
+                  }}
+                >
+                  <Trophy size={14} strokeWidth={2.3} />
+                  Top
+                </button>
+              </div>
+
+              <div className="gco-nearby-launch-row">
           <button
             type="button"
             className={`gco-nearby-launch ${nearbyMode ? 'is-active' : ''}`}
@@ -883,37 +954,17 @@ export default function MapPage() {
               <X size={13} />
             </button>
           )}
-        </div>
-        {locationError && (
-          <div className="gco-nearby-status">
-            <AlertTriangle size={13} />
-            {locationError}
+              </div>
+              {locationError && (
+                <div className="gco-nearby-status">
+                  <AlertTriangle size={13} />
+                  {locationError}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* ── Quick recenter ── */}
-      <button
-        type="button"
-        onClick={resetView}
-        aria-label="Recentrer sur les fresques"
-        title="Recentrer"
-        disabled={!mapReady}
-        style={{
-          position: 'absolute', top: '16px', left: '16px',
-          zIndex: 11,
-          width: '42px', height: '42px',
-          borderRadius: '50%',
-          background: 'rgba(255,255,255,0.94)',
-          boxShadow: '0 2px 16px rgba(0,0,0,0.12)',
-          color: '#1a1a1a',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          opacity: mapReady ? 1 : 0.5,
-          cursor: mapReady ? 'pointer' : 'default',
-        }}
-      >
-        <Crosshair size={17} strokeWidth={2.2} />
-      </button>
+        </div>
+      )}
 
       {loading && !mapError && (
         <div className="gco-map-toast">
@@ -1439,22 +1490,130 @@ export default function MapPage() {
           transform: translateX(-50%) translateY(0);
         }
 
-        .gco-map-search {
+        .gco-map-toolbar {
           position: absolute;
-          top: 68px;
+          top: 16px;
           left: 16px;
-          right: 16px;
           z-index: 12;
-          max-width: 560px;
-          margin: 0 auto;
           display: grid;
           gap: 8px;
-          pointer-events: none;
+          justify-items: start;
         }
 
-        .gco-map-search-row,
-        .gco-map-filter-row {
-          pointer-events: auto;
+        .gco-map-tool-button {
+          position: relative;
+          height: 42px;
+          min-width: 42px;
+          padding: 0 12px;
+          border: 0;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.94);
+          color: #1a1a1a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          box-shadow: 0 2px 16px rgba(0,0,0,0.12);
+          backdrop-filter: blur(12px);
+        }
+
+        .gco-map-tool-button:disabled {
+          opacity: 0.5;
+          cursor: default;
+        }
+
+        .gco-map-tool-button.is-primary {
+          min-width: 118px;
+          background: rgba(26,26,26,0.9);
+          color: #fff;
+          font-family: var(--font-display);
+          font-size: 10px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .gco-map-tool-button.is-primary.has-state::after {
+          content: '';
+          position: absolute;
+          top: 5px;
+          right: 5px;
+          width: 8px;
+          height: 8px;
+          border: 2px solid rgba(26,26,26,0.9);
+          border-radius: 50%;
+          background: var(--accent);
+        }
+
+        .gco-controls-backdrop {
+          position: absolute;
+          inset: 0;
+          z-index: 30;
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          padding: 86px 16px 16px;
+          background: rgba(0,0,0,0.28);
+          backdrop-filter: blur(2px);
+          animation: fadeControlBackdrop 0.18s ease both;
+        }
+
+        .gco-controls-modal {
+          width: min(460px, 100%);
+          max-height: calc(100svh - 118px);
+          overflow: auto;
+          padding: 14px;
+          border-radius: 16px;
+          background: rgba(255,255,255,0.97);
+          color: #1a1a1a;
+          box-shadow: 0 24px 70px rgba(0,0,0,0.3);
+          animation: popControlModal 0.22s ease both;
+        }
+
+        .gco-controls-modal-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 12px;
+        }
+
+        .gco-controls-modal-head div {
+          min-width: 0;
+          display: grid;
+          gap: 3px;
+        }
+
+        .gco-controls-modal-head span {
+          color: var(--accent);
+          font-family: var(--font-display);
+          font-size: 9px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+        }
+
+        .gco-controls-modal-head strong {
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 18px;
+          letter-spacing: 0.04em;
+          line-height: 1;
+        }
+
+        .gco-controls-modal-head button {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: rgba(26,26,26,0.08);
+          color: #1a1a1a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 auto;
+        }
+
+        .gco-map-search {
+          display: grid;
+          gap: 10px;
         }
 
         .gco-map-search-row {
@@ -1464,9 +1623,8 @@ export default function MapPage() {
           gap: 8px;
           padding: 0 10px 0 12px;
           border-radius: 14px;
-          background: rgba(255,255,255,0.94);
-          box-shadow: 0 4px 18px rgba(0,0,0,0.14);
-          backdrop-filter: blur(12px);
+          background: #f4f0e8;
+          box-shadow: inset 0 0 0 1px rgba(26,26,26,0.08);
         }
 
         .gco-map-search-row input {
@@ -2057,7 +2215,7 @@ export default function MapPage() {
 
         /* Mapbox overrides */
         .mapboxgl-ctrl-top-right {
-          top: 258px !important;
+          top: 70px !important;
           right: 16px !important;
         }
         .mapboxgl-ctrl-top-right .mapboxgl-ctrl {
@@ -2174,7 +2332,7 @@ export default function MapPage() {
           flex: 0 0 auto;
         }
 
-        @media (max-width: 380px) {
+        @media (max-width: 520px) {
           .gco-map-toast {
             max-width: calc(100% - 24px);
             white-space: normal;
@@ -2183,13 +2341,27 @@ export default function MapPage() {
             justify-content: center;
           }
 
-          .gco-photo-marker-label {
-            display: none;
+          .gco-map-toolbar {
+            left: 12px;
           }
 
-          .gco-map-search {
-            left: 12px;
-            right: 12px;
+          .gco-map-tool-button.is-primary {
+            min-width: 104px;
+            padding: 0 11px;
+          }
+
+          .gco-controls-backdrop {
+            align-items: flex-end;
+            padding: 16px;
+          }
+
+          .gco-controls-modal {
+            max-height: calc(100svh - 96px);
+            border-radius: 18px;
+          }
+
+          .gco-photo-marker-label {
+            display: none;
           }
 
           .gco-map-filter-row {
@@ -2252,7 +2424,8 @@ export default function MapPage() {
           }
 
           .mapboxgl-ctrl-top-right {
-            top: 364px !important;
+            top: 70px !important;
+            right: 12px !important;
           }
         }
 
@@ -2264,6 +2437,16 @@ export default function MapPage() {
         @keyframes userPulse {
           from { transform: scale(0.55); opacity: 0.65; }
           to { transform: scale(1.25); opacity: 0; }
+        }
+
+        @keyframes fadeControlBackdrop {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes popControlModal {
+          from { opacity: 0; transform: translateY(10px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}</style>
     </div>
