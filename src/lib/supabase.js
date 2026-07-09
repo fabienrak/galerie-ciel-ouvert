@@ -20,6 +20,7 @@ export const supabase = isSupabaseConfigured()
   : null
 
 const MOCK_VIEWS_STORAGE_KEY = 'gco_mock_fresque_views'
+const FRESQUES_CACHE_KEY = 'gco_cached_fresques_v1'
 
 function getStoredMockViews() {
   if (typeof localStorage === 'undefined') return {}
@@ -39,6 +40,44 @@ function setStoredMockViews(views) {
   } catch {
     // Ignore storage errors in private mode.
   }
+}
+
+function getCachedFresques() {
+  if (typeof localStorage === 'undefined') return []
+
+  try {
+    const cached = JSON.parse(localStorage.getItem(FRESQUES_CACHE_KEY) || '[]')
+    return Array.isArray(cached) ? cached : []
+  } catch {
+    return []
+  }
+}
+
+function setCachedFresques(fresques) {
+  if (typeof localStorage === 'undefined' || !Array.isArray(fresques)) return
+
+  try {
+    localStorage.setItem(FRESQUES_CACHE_KEY, JSON.stringify(fresques))
+  } catch {
+    // Ignore storage errors in private mode or full storage.
+  }
+}
+
+function cacheFresque(fresque) {
+  if (!fresque?.slug) return
+
+  const cached = getCachedFresques()
+  const next = cached.filter(item => item.slug !== fresque.slug)
+  setCachedFresques([fresque, ...next])
+}
+
+function updateCachedFresqueViews(slug, views) {
+  const cached = getCachedFresques()
+  if (cached.length === 0) return
+
+  setCachedFresques(cached.map(f => (
+    f.slug === slug ? { ...f, views: Number(views) } : f
+  )))
 }
 
 function withMockViews(fresque) {
@@ -180,23 +219,39 @@ export const MOCK_FRESQUES = [
 // ─── Fonctions de data (Supabase ou mock) ──────────────────────────────────
 export async function getFresques() {
   if (!isSupabaseConfigured()) return MOCK_FRESQUES.map(withMockViews)
-  const { data, error } = await supabase
-    .from('fresques')
-    .select('*, artiste:artistes(*)')
-    .order('date_creation', { ascending: false })
-  if (error) throw error
-  return data
+
+  try {
+    const { data, error } = await supabase
+      .from('fresques')
+      .select('*, artiste:artistes(*)')
+      .order('date_creation', { ascending: false })
+    if (error) throw error
+    setCachedFresques(data || [])
+    return data
+  } catch (error) {
+    const cached = getCachedFresques()
+    if (cached.length > 0) return cached
+    throw error
+  }
 }
 
 export async function getFresqueBySlug(slug) {
   if (!isSupabaseConfigured()) return withMockViews(MOCK_FRESQUES.find(f => f.slug === slug)) || null
-  const { data, error } = await supabase
-    .from('fresques')
-    .select('*, artiste:artistes(*)')
-    .eq('slug', slug)
-    .single()
-  if (error) throw error
-  return data
+
+  try {
+    const { data, error } = await supabase
+      .from('fresques')
+      .select('*, artiste:artistes(*)')
+      .eq('slug', slug)
+      .single()
+    if (error) throw error
+    cacheFresque(data)
+    return data
+  } catch (error) {
+    const cached = getCachedFresques().find(f => f.slug === slug)
+    if (cached) return cached
+    throw error
+  }
 }
 
 export async function incrementFresqueViews(slug) {
@@ -222,6 +277,7 @@ export async function incrementFresqueViews(slug) {
     return null
   }
 
+  updateCachedFresqueViews(slug, data)
   return Number(data)
 }
 

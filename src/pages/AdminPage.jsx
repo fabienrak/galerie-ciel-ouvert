@@ -126,7 +126,7 @@ export default function AdminPage() {
         await addFresque(payload)
       }
       // Generate QR
-      const url = `${window.location.origin}/fresque/${fresque.slug}`
+      const url = `${window.location.origin}/fresque/${fresque.slug}?source=qr`
       const qr = await QRCode.toDataURL(url, {
         width: 300, margin: 2,
         color: { dark: '#0a0a0a', light: '#f5f0e8' },
@@ -320,7 +320,7 @@ export default function AdminPage() {
               <img src={qrDataUrl} alt="QR" style={{ width: '140px', height: '140px' }} />
             </div>
             <p style={{ fontFamily: 'var(--font-display)', fontSize: '10px', color: 'var(--muted)', textAlign: 'center' }}>
-              Imprime et colle sur le mur !
+              Imprime et colle sur le mur : le scan valide le passeport.
             </p>
             <button onClick={downloadQR} style={{
               display: 'flex', alignItems: 'center', gap: '8px',

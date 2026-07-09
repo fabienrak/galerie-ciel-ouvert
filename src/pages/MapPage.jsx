@@ -4,16 +4,25 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { getFresques } from '../lib/supabase.js'
 import {
+  getVisitedPassport,
+  subscribePassport,
+  toggleFresqueVisited,
+} from '../lib/passport.js'
+import {
   AlertTriangle,
   ArrowRight,
+  Award,
   Calendar,
   ChevronLeft,
   ChevronRight,
+  CheckCircle2,
   Crosshair,
+  Eye,
   LocateFixed,
   MapPin,
   Navigation,
   Search,
+  Trophy,
   X,
 } from 'lucide-react'
 
@@ -159,6 +168,8 @@ export default function MapPage() {
   const [userPosition, setUserPosition] = useState(null)
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState('')
+  const [visitedPassport, setVisitedPassport] = useState(getVisitedPassport)
+  const [topPanelOpen, setTopPanelOpen] = useState(false)
 
   const geolocatedFresques = useMemo(() => fresques.filter(hasValidCoordinates), [fresques])
   const artistOptions = useMemo(() => {
@@ -222,9 +233,22 @@ export default function MapPage() {
   const activeNearbyFresque = nearbyDiscoveryFresques.length > 0
     ? nearbyDiscoveryFresques[nearbyIndex % nearbyDiscoveryFresques.length]
     : null
+  const visitedSlugs = useMemo(() => new Set(Object.keys(visitedPassport)), [visitedPassport])
+  const visitedCount = useMemo(() => {
+    return geolocatedFresques.filter(f => visitedSlugs.has(f.slug)).length
+  }, [geolocatedFresques, visitedSlugs])
+  const visitProgress = geolocatedFresques.length > 0
+    ? Math.round((visitedCount / geolocatedFresques.length) * 100)
+    : 0
+  const topFresques = useMemo(() => {
+    return [...geolocatedFresques]
+      .sort((a, b) => Number(b.views || 0) - Number(a.views || 0))
+      .slice(0, 5)
+  }, [geolocatedFresques])
   const filtersActive = Boolean(searchTerm.trim() || artistFilter || tagFilter)
   const selectedPhotoUrl = getPhotoUrl(selected)
   const selectedDate = formatCreationDate(selected?.date_creation)
+  const selectedVisited = Boolean(selected?.slug && visitedPassport[selected.slug])
 
   /* ── Load fresques ── */
   useEffect(() => {
@@ -251,6 +275,10 @@ export default function MapPage() {
     return () => {
       mounted = false
     }
+  }, [])
+
+  useEffect(() => {
+    return subscribePassport(setVisitedPassport)
   }, [])
 
   /* ── Init Mapbox ── */
@@ -399,6 +427,7 @@ export default function MapPage() {
       const title = f.titre || 'Fresque'
       const thumbnailUrl = getPhotoUrl(f)
       const [lng, lat] = getLngLat(f)
+      const isVisited = visitedSlugs.has(f.slug)
 
       const el = document.createElement('button')
       el.className = 'gco-marker'
@@ -406,7 +435,7 @@ export default function MapPage() {
       el.setAttribute('aria-label', `Voir ${title}`)
 
       const marker = document.createElement('div')
-      marker.className = 'gco-photo-marker'
+      marker.className = isVisited ? 'gco-photo-marker is-visited' : 'gco-photo-marker'
       marker.dataset.id = f.id
 
       const thumb = document.createElement('div')
@@ -427,7 +456,11 @@ export default function MapPage() {
       label.className = 'gco-photo-marker-label'
       label.textContent = title.length > 18 ? `${title.slice(0, 17)}…` : title
 
-      marker.append(thumb, ring, tail, label)
+      const visitedBadge = document.createElement('div')
+      visitedBadge.className = 'gco-photo-marker-visited'
+      visitedBadge.textContent = '✓'
+
+      marker.append(thumb, ring, tail, label, visitedBadge)
       el.append(marker)
 
       el.addEventListener('click', event => {
@@ -447,7 +480,7 @@ export default function MapPage() {
       initialFitRef.current = true
       window.requestAnimationFrame(() => focusFresques({ duration: 0 }))
     }
-  }, [mapReady, mapFresques])
+  }, [mapReady, mapFresques, visitedSlugs])
 
   useEffect(() => {
     if (!selected) return
@@ -596,7 +629,7 @@ export default function MapPage() {
     fresquesToFit.forEach(f => bounds.extend(getLngLat(f)))
     map.current.fitBounds(bounds, {
       padding: {
-        top: nearbyMode && userPosition ? 258 : 220,
+        top: 286,
         right: 64,
         bottom: panelOpen ? 230 : nearbyMode && userPosition ? 210 : 92,
         left: 64,
@@ -610,6 +643,16 @@ export default function MapPage() {
   function closePanel() {
     setSelected(null)
     clearActiveMarkers()
+  }
+
+  function toggleSelectedVisited() {
+    if (!selected?.slug) return
+    setVisitedPassport(toggleFresqueVisited(selected.slug))
+  }
+
+  function openTopFresque(fresque) {
+    setTopPanelOpen(false)
+    openFresquePreview(fresque)
   }
 
   function resetView() {
@@ -634,6 +677,7 @@ export default function MapPage() {
 
   function requestNearbyDiscovery() {
     setLocationError('')
+    setTopPanelOpen(false)
 
     if (!('geolocation' in navigator)) {
       setLocationError('La localisation n’est pas disponible sur cet appareil.')
@@ -781,6 +825,29 @@ export default function MapPage() {
             ))}
           </select>
         </div>
+        <div className="gco-passport-row">
+          <div className="gco-passport-summary">
+            <Award size={14} strokeWidth={2.3} />
+            <div>
+              <span>Passeport</span>
+              <strong>{visitedCount}/{geolocatedFresques.length} vues</strong>
+            </div>
+            <div className="gco-passport-bar" aria-hidden="true">
+              <i style={{ width: `${visitProgress}%` }} />
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`gco-top-toggle ${topPanelOpen ? 'is-active' : ''}`}
+            onClick={() => {
+              setTopPanelOpen(open => !open)
+              setNearbyMode(false)
+            }}
+          >
+            <Trophy size={14} strokeWidth={2.3} />
+            Top
+          </button>
+        </div>
         <div className="gco-nearby-launch-row">
           <button
             type="button"
@@ -899,6 +966,50 @@ export default function MapPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Top fresques ── */}
+      {topPanelOpen && !selected && (
+        <div className="gco-top-panel">
+          <div className="gco-top-panel-head">
+            <div>
+              <span>Top fresques</span>
+              <strong>Les plus vues</strong>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTopPanelOpen(false)}
+              aria-label="Fermer le top fresques"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <div className="gco-top-list">
+            {topFresques.map((f, index) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => openTopFresque(f)}
+              >
+                <span
+                  className="gco-top-rank"
+                  style={{ backgroundImage: getPhotoUrl(f) ? `url("${escapeCssUrl(getPhotoUrl(f))}")` : undefined }}
+                >
+                  <b>{index + 1}</b>
+                </span>
+                <span className="gco-top-copy">
+                  <strong>{f.titre || 'Fresque'}</strong>
+                  <small>{f.artiste?.nom || 'Artiste inconnu'}</small>
+                </span>
+                <span className="gco-top-views">
+                  <Eye size={12} />
+                  {Number(f.views || 0)}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1098,6 +1209,28 @@ export default function MapPage() {
             </p>
 
             <button
+              type="button"
+              onClick={toggleSelectedVisited}
+              style={{
+                marginTop: '10px',
+                width: '100%',
+                background: selectedVisited ? 'rgba(0,180,100,0.12)' : '#f4f0e8',
+                color: selectedVisited ? '#007d45' : '#1a1a1a',
+                fontFamily: 'var(--font-display)',
+                fontSize: '10px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                padding: '9px',
+                borderRadius: '8px',
+                border: selectedVisited ? '1px solid rgba(0,180,100,0.24)' : '1px solid rgba(26,26,26,0.08)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+              }}
+            >
+              <CheckCircle2 size={13} />
+              {selectedVisited ? 'Fresque visitée' : 'Ajouter au passeport'}
+            </button>
+
+            <button
               onClick={() => navigate(`/fresque/${selected.slug}`)}
               disabled={!selected.slug}
               style={{
@@ -1184,6 +1317,11 @@ export default function MapPage() {
             linear-gradient(135deg, rgba(255,59,31,0.95), rgba(26,26,26,0.95));
         }
 
+        .gco-photo-marker.is-visited .gco-photo-marker-thumb {
+          border-color: #00b464;
+          filter: saturate(0.92);
+        }
+
         .gco-photo-marker-ring {
           position: absolute;
           left: 50%;
@@ -1196,6 +1334,35 @@ export default function MapPage() {
           transform: translateX(-50%);
           transition: border-color 0.18s ease, box-shadow 0.18s ease;
           pointer-events: none;
+        }
+
+        .gco-photo-marker.is-visited .gco-photo-marker-ring {
+          border-color: rgba(0,180,100,0.78);
+          box-shadow: 0 0 0 3px rgba(0,180,100,0.16);
+        }
+
+        .gco-photo-marker-visited {
+          position: absolute;
+          right: -2px;
+          top: 2px;
+          z-index: 5;
+          width: 20px;
+          height: 20px;
+          border: 2px solid #fff;
+          border-radius: 50%;
+          background: #00b464;
+          color: #fff;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          font-family: var(--font-display);
+          font-size: 11px;
+          line-height: 1;
+          box-shadow: 0 5px 14px rgba(0,0,0,0.24);
+        }
+
+        .gco-photo-marker.is-visited .gco-photo-marker-visited {
+          display: flex;
         }
 
         .gco-photo-marker-tail {
@@ -1350,6 +1517,100 @@ export default function MapPage() {
           font-size: 10px;
           letter-spacing: 0.04em;
           box-shadow: 0 4px 16px rgba(0,0,0,0.16);
+        }
+
+        .gco-passport-row {
+          pointer-events: auto;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .gco-passport-summary,
+        .gco-top-toggle {
+          min-height: 36px;
+          border: 0;
+          border-radius: 12px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+          backdrop-filter: blur(12px);
+        }
+
+        .gco-passport-summary {
+          min-width: 0;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr) 76px;
+          align-items: center;
+          gap: 9px;
+          padding: 7px 10px;
+          background: rgba(26,26,26,0.88);
+          color: #fff;
+        }
+
+        .gco-passport-summary svg {
+          color: var(--accent2);
+        }
+
+        .gco-passport-summary > div:not(.gco-passport-bar) {
+          min-width: 0;
+          display: grid;
+          gap: 1px;
+        }
+
+        .gco-passport-summary span {
+          font-family: var(--font-display);
+          font-size: 8px;
+          color: rgba(255,255,255,0.52);
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .gco-passport-summary strong {
+          min-width: 0;
+          color: #fff;
+          font-family: var(--font-display);
+          font-size: 11px;
+          letter-spacing: 0.04em;
+          line-height: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .gco-passport-bar {
+          position: relative;
+          height: 7px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.14);
+          overflow: hidden;
+        }
+
+        .gco-passport-bar i {
+          position: absolute;
+          inset: 0 auto 0 0;
+          min-width: 3px;
+          border-radius: inherit;
+          background: linear-gradient(90deg, var(--accent2), #00b464);
+          transition: width 0.24s ease;
+        }
+
+        .gco-top-toggle {
+          min-width: 76px;
+          padding: 0 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          background: rgba(255,255,255,0.94);
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 10px;
+          letter-spacing: 0.07em;
+          text-transform: uppercase;
+        }
+
+        .gco-top-toggle.is-active {
+          background: rgba(245,200,0,0.96);
         }
 
         .gco-nearby-launch-row {
@@ -1652,9 +1913,151 @@ export default function MapPage() {
           text-align: center;
         }
 
+        .gco-top-panel {
+          position: absolute;
+          left: 16px;
+          right: 16px;
+          bottom: 16px;
+          z-index: 19;
+          width: min(420px, calc(100% - 32px));
+          margin: 0 auto;
+          padding: 10px;
+          border-radius: 14px;
+          background: rgba(255,255,255,0.96);
+          box-shadow: 0 18px 45px rgba(0,0,0,0.2);
+          backdrop-filter: blur(14px);
+          animation: slideUpPanel 0.3s ease both;
+        }
+
+        .gco-top-panel-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 8px;
+        }
+
+        .gco-top-panel-head div {
+          display: grid;
+          gap: 2px;
+        }
+
+        .gco-top-panel-head span {
+          color: var(--accent);
+          font-family: var(--font-display);
+          font-size: 9px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .gco-top-panel-head strong {
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 15px;
+          line-height: 1;
+          letter-spacing: 0.04em;
+        }
+
+        .gco-top-panel-head button {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: rgba(26,26,26,0.08);
+          color: #1a1a1a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .gco-top-list {
+          display: grid;
+          gap: 7px;
+        }
+
+        .gco-top-list button {
+          min-width: 0;
+          display: grid;
+          grid-template-columns: 46px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 10px;
+          padding: 7px 9px 7px 7px;
+          border-radius: 10px;
+          background: #f4f0e8;
+          color: #1a1a1a;
+          text-align: left;
+        }
+
+        .gco-top-rank {
+          position: relative;
+          width: 46px;
+          height: 42px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, var(--accent), #1a1a1a);
+          background-size: cover;
+          background-position: center;
+          overflow: hidden;
+          flex: 0 0 auto;
+        }
+
+        .gco-top-rank::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: rgba(0,0,0,0.24);
+        }
+
+        .gco-top-rank b {
+          position: absolute;
+          left: 6px;
+          bottom: 4px;
+          z-index: 1;
+          color: #fff;
+          font-family: var(--font-display);
+          font-size: 16px;
+          line-height: 1;
+        }
+
+        .gco-top-copy {
+          min-width: 0;
+          display: grid;
+          gap: 2px;
+        }
+
+        .gco-top-copy strong,
+        .gco-top-copy small {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .gco-top-copy strong {
+          font-family: var(--font-display);
+          font-size: 13px;
+          letter-spacing: 0.03em;
+        }
+
+        .gco-top-copy small {
+          color: #777;
+          font-size: 10px;
+        }
+
+        .gco-top-views {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 5px 7px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.82);
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 9px;
+          letter-spacing: 0.03em;
+        }
+
         /* Mapbox overrides */
         .mapboxgl-ctrl-top-right {
-          top: 214px !important;
+          top: 258px !important;
           right: 16px !important;
         }
         .mapboxgl-ctrl-top-right .mapboxgl-ctrl {
@@ -1793,6 +2196,18 @@ export default function MapPage() {
             grid-template-columns: 1fr;
           }
 
+          .gco-passport-row {
+            grid-template-columns: 1fr;
+          }
+
+          .gco-passport-summary {
+            grid-template-columns: auto minmax(0, 1fr) 64px;
+          }
+
+          .gco-top-toggle {
+            width: 100%;
+          }
+
           .gco-nearby-launch-row {
             grid-template-columns: minmax(0, 1fr) auto;
           }
@@ -1816,6 +2231,14 @@ export default function MapPage() {
             padding: 8px;
           }
 
+          .gco-top-panel {
+            left: 12px;
+            right: 12px;
+            bottom: 12px;
+            width: calc(100% - 24px);
+            padding: 8px;
+          }
+
           .gco-nearby-card {
             grid-template-columns: 94px minmax(0, 1fr);
           }
@@ -1829,7 +2252,7 @@ export default function MapPage() {
           }
 
           .mapboxgl-ctrl-top-right {
-            top: 268px !important;
+            top: 364px !important;
           }
         }
 

@@ -1,5 +1,6 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { Map, Users, LayoutGrid, Settings } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Outlet, NavLink } from 'react-router-dom'
+import { Gauge, LayoutGrid, Map, Users, WifiOff } from 'lucide-react'
 
 const NAV = [
   { to: '/carte',    icon: Map,        label: 'Carte' },
@@ -7,12 +8,70 @@ const NAV = [
   { to: '/artistes', icon: Users,      label: 'Artistes' },
 ]
 
+function getNetworkState() {
+  if (typeof navigator === 'undefined') return { online: true, lowData: false }
+
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+  const effectiveType = connection?.effectiveType || ''
+
+  return {
+    online: navigator.onLine !== false,
+    lowData: Boolean(connection?.saveData || ['slow-2g', '2g'].includes(effectiveType)),
+  }
+}
+
 export default function Layout() {
+  const [network, setNetwork] = useState(getNetworkState)
+
+  useEffect(() => {
+    const updateNetwork = () => setNetwork(getNetworkState())
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+
+    window.addEventListener('online', updateNetwork)
+    window.addEventListener('offline', updateNetwork)
+    connection?.addEventListener?.('change', updateNetwork)
+
+    return () => {
+      window.removeEventListener('online', updateNetwork)
+      window.removeEventListener('offline', updateNetwork)
+      connection?.removeEventListener?.('change', updateNetwork)
+    }
+  }, [])
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <main style={{ flex: 1, paddingBottom: '72px' }}>
         <Outlet />
       </main>
+
+      {(!network.online || network.lowData) && (
+        <div style={{
+          position: 'fixed',
+          left: '12px',
+          right: '12px',
+          bottom: '80px',
+          zIndex: 1001,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '10px 12px',
+          borderRadius: '12px',
+          background: network.online ? 'rgba(245,200,0,0.94)' : 'rgba(26,26,26,0.94)',
+          color: network.online ? '#1a1a1a' : '#fff',
+          boxShadow: '0 12px 30px rgba(0,0,0,0.28)',
+          fontFamily: 'var(--font-display)',
+          fontSize: '10px',
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+        }}>
+          {network.online ? <Gauge size={15} /> : <WifiOff size={15} />}
+          <span>
+            {network.online
+              ? 'Connexion faible : affichage allégé avec cache local'
+              : 'Mode hors ligne : les fresques déjà ouvertes restent disponibles'}
+          </span>
+        </div>
+      )}
 
       {/* Bottom nav mobile-first */}
       <nav style={{

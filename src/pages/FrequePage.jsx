@@ -1,8 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { getFresqueBySlug, incrementFresqueViews } from '../lib/supabase.js'
-import { ArrowLeft, Calendar, Check, Download, Eye, Globe, Images, Instagram, MapPin, Music, Share2, Youtube } from 'lucide-react'
+import { getVisitedPassport, markFresqueVisited, subscribePassport, toggleFresqueVisited } from '../lib/passport.js'
+import {
+  ArrowLeft,
+  Award,
+  Calendar,
+  Check,
+  CheckCircle2,
+  Download,
+  Eye,
+  Globe,
+  Images,
+  Instagram,
+  MapPin,
+  Music,
+  QrCode,
+  Share2,
+  Youtube,
+} from 'lucide-react'
 import PanoViewer from '../components/PanoViewer.jsx'
 import PhotoGallery from '../components/PhotoGallery.jsx'
 
@@ -18,13 +35,18 @@ function getFresquePhotos(fresque) {
 
 export default function FrequePage() {
   const { slug } = useParams()
+  const [searchParams] = useSearchParams()
   const [fresque, setFresque]   = useState(null)
   const [loading, setLoading]   = useState(true)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [showQr, setShowQr]     = useState(false)
   const [viewMode, setViewMode] = useState('gallery') // 'gallery' | 'pano'
   const [shareStatus, setShareStatus] = useState('')
+  const [visitedPassport, setVisitedPassport] = useState(getVisitedPassport)
   const shareStatusTimer = useRef(null)
+  const isQrEntry = searchParams.get('source') === 'qr' ||
+    searchParams.get('from') === 'qr' ||
+    searchParams.get('scan') === '1'
 
   useEffect(() => {
     let mounted = true
@@ -39,6 +61,10 @@ export default function FrequePage() {
         if (f) {
           generateQR(f.slug)
           registerView(f.slug)
+          if (isQrEntry) {
+            markFresqueVisited(f.slug)
+            setVisitedPassport(getVisitedPassport())
+          }
         }
       })
       .catch(error => {
@@ -65,14 +91,18 @@ export default function FrequePage() {
     return () => {
       mounted = false
     }
-  }, [slug])
+  }, [isQrEntry, slug])
 
   useEffect(() => () => {
     if (shareStatusTimer.current) clearTimeout(shareStatusTimer.current)
   }, [])
 
+  useEffect(() => {
+    return subscribePassport(setVisitedPassport)
+  }, [])
+
   async function generateQR(s) {
-    const url = `${window.location.origin}/fresque/${s}`
+    const url = `${window.location.origin}/fresque/${s}?source=qr`
     const dataUrl = await QRCode.toDataURL(url, {
       width: 300, margin: 2,
       color: { dark: '#0a0a0a', light: '#f5f0e8' },
@@ -137,6 +167,11 @@ export default function FrequePage() {
     }
   }
 
+  function toggleVisited() {
+    if (!fresque?.slug) return
+    setVisitedPassport(toggleFresqueVisited(fresque.slug))
+  }
+
   if (loading) return (
     <div style={{ padding: '40px 20px', fontFamily: 'var(--font-display)', fontSize: '12px', color: 'var(--muted)' }}>
       Chargement...
@@ -152,6 +187,8 @@ export default function FrequePage() {
   const { artiste } = fresque
   const photos = getFresquePhotos(fresque)
   const views = Number(fresque.views || 0)
+  const isVisited = Boolean(visitedPassport[fresque.slug])
+  const visitedCount = Object.keys(visitedPassport).length
 
   return (
     <div style={{ minHeight: '100svh', animation: 'fadeUp 0.4s ease' }}>
@@ -249,6 +286,84 @@ export default function FrequePage() {
             {shareStatus || 'Partager'}
           </button>
         </div>
+      </div>
+
+      {isQrEntry && (
+        <div style={{
+          margin: '0 20px 14px',
+          padding: '14px',
+          borderRadius: '12px',
+          background: 'rgba(255,59,31,0.14)',
+          border: '1px solid rgba(255,59,31,0.36)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '12px',
+        }}>
+          <QrCode size={18} color="var(--accent)" style={{ flex: '0 0 auto', marginTop: '2px' }} />
+          <div>
+            <p style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: '12px',
+              color: 'var(--accent)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              lineHeight: 1.3,
+            }}>
+              QR mural scanné
+            </p>
+            <p style={{ marginTop: '5px', fontSize: '12px', lineHeight: 1.45, color: 'rgba(245,240,232,0.72)' }}>
+              Cette fresque a été ajoutée à ton passeport de visite.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div style={{
+        margin: '0 20px 18px',
+        padding: '14px',
+        borderRadius: '12px',
+        background: isVisited ? 'rgba(0,180,100,0.12)' : 'var(--card)',
+        border: `1px solid ${isVisited ? 'rgba(0,180,100,0.34)' : 'var(--border)'}`,
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: '12px',
+        alignItems: 'center',
+      }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {isVisited ? <CheckCircle2 size={15} color="#00b464" /> : <Award size={15} color="var(--accent2)" />}
+            <span style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: '11px',
+              color: isVisited ? '#00b464' : 'var(--accent2)',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+            }}>
+              {isVisited ? 'Dans ton passeport' : 'Passeport de visite'}
+            </span>
+          </div>
+          <p style={{ marginTop: '5px', fontSize: '12px', color: 'rgba(245,240,232,0.62)', lineHeight: 1.35 }}>
+            {visitedCount} fresque{visitedCount > 1 ? 's' : ''} déjà validée{visitedCount > 1 ? 's' : ''}.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={toggleVisited}
+          style={{
+            minHeight: '34px',
+            padding: '0 12px',
+            borderRadius: '999px',
+            background: isVisited ? 'rgba(255,255,255,0.08)' : 'var(--accent)',
+            color: isVisited ? 'rgba(245,240,232,0.8)' : '#fff',
+            fontFamily: 'var(--font-display)',
+            fontSize: '9px',
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {isVisited ? 'Retirer' : 'Marquer vue'}
+        </button>
       </div>
 
       {/* Media viewer */}
@@ -392,7 +507,7 @@ export default function FrequePage() {
               <img src={qrDataUrl} alt="QR code" style={{ width: '160px', height: '160px' }} />
             </div>
             <p style={{ fontFamily: 'var(--font-display)', fontSize: '10px', color: 'var(--muted)', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-              Scanne pour ouvrir cette fiche
+              Scanne sur le mur pour ouvrir cette fiche et valider le passeport
             </p>
             <button onClick={downloadQR} style={{
               display: 'flex', alignItems: 'center', gap: '8px',

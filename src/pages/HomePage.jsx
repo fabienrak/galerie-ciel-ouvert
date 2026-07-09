@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, MapPin } from 'lucide-react'
+import { ArrowRight, Eye, MapPin, Trophy } from 'lucide-react'
 import { getFresques } from '../lib/supabase.js'
 
 export default function HomePage() {
@@ -40,6 +40,9 @@ export default function HomePage() {
 
   const slide = fresques[slideIdx]
   const prev  = prevIdx !== null ? fresques[prevIdx] : null
+  const topFresques = [...fresques]
+    .sort((a, b) => Number(b.views || 0) - Number(a.views || 0))
+    .slice(0, 3)
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -234,6 +237,97 @@ export default function HomePage() {
           }
         `}</style>
       </header>
+
+      {topFresques.length > 0 && (
+        <section style={{ padding: '48px 20px 10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '18px' }}>
+            <div>
+              <p style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                fontFamily: 'var(--font-display)', fontSize: '10px',
+                color: 'var(--accent2)', textTransform: 'uppercase', letterSpacing: '0.12em',
+                marginBottom: '6px',
+              }}>
+                <Trophy size={13} /> Top fresques
+              </p>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '32px', letterSpacing: '0.02em', lineHeight: 1 }}>
+                DU MOMENT
+              </h2>
+            </div>
+            <Link to="/carte" style={{ fontFamily: 'var(--font-display)', fontSize: '10px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+              Carte →
+            </Link>
+          </div>
+
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {topFresques.map((f, index) => (
+              <Link
+                key={f.id}
+                to={`/fresque/${f.slug}`}
+                style={{
+                  minHeight: '92px',
+                  display: 'grid',
+                  gridTemplateColumns: '86px 1fr auto',
+                  alignItems: 'center',
+                  gap: '14px',
+                  padding: '9px 12px 9px 9px',
+                  border: '1px solid var(--border)',
+                  borderRadius: '10px',
+                  background: 'rgba(245,240,232,0.04)',
+                  animation: `fadeUp 0.4s ${index * 0.06}s ease both`,
+                }}
+              >
+                <div style={{
+                  position: 'relative',
+                  width: '86px',
+                  height: '74px',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  backgroundImage: `url(${f.photo_url})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    left: '7px',
+                    bottom: '6px',
+                    minWidth: '24px',
+                    height: '24px',
+                    borderRadius: '999px',
+                    background: 'var(--accent2)',
+                    color: '#1a1a1a',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontFamily: 'var(--font-display)',
+                    fontSize: '12px',
+                  }}>
+                    {index + 1}
+                  </span>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: '18px', lineHeight: 1, letterSpacing: '0.04em' }}>{f.titre}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                    <MapPin size={10} color="var(--accent)" />
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: '10px', color: 'var(--muted)' }}>{f.artiste?.nom}</span>
+                  </div>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  color: 'var(--accent2)',
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '10px',
+                }}>
+                  <Eye size={12} />
+                  {Number(f.views || 0)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── Fresques récentes ── */}
       <section style={{ padding: '60px 20px 20px' }}>
