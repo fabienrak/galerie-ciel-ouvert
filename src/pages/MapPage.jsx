@@ -3,7 +3,19 @@ import { useNavigate } from 'react-router-dom'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { getFresques } from '../lib/supabase.js'
-import { AlertTriangle, ArrowRight, Calendar, Crosshair, MapPin, Search, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Crosshair,
+  LocateFixed,
+  MapPin,
+  Navigation,
+  Search,
+  X,
+} from 'lucide-react'
 
 // ── Mets ta clé Mapbox ici ou dans .env ──────────────────
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'YOUR_MAPBOX_TOKEN'
@@ -20,6 +32,14 @@ const ANKADIVATO_BOUNDS = [
 ]
 
 const HAS_MAPBOX_TOKEN = Boolean(MAPBOX_TOKEN && MAPBOX_TOKEN !== 'YOUR_MAPBOX_TOKEN')
+const EARTH_RADIUS_METERS = 6371000
+const DEFAULT_NEARBY_RADIUS = 600
+const NEARBY_RADIUS_OPTIONS = [
+  { value: 300, label: '300 m' },
+  { value: 600, label: '600 m' },
+  { value: 1000, label: '1 km' },
+  { value: 2000, label: '2 km' },
+]
 
 function hasValidCoordinates(fresque) {
   return Number.isFinite(Number(fresque?.lat)) && Number.isFinite(Number(fresque?.lng))
@@ -52,10 +72,76 @@ function normalizeText(value = '') {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
+function toRadians(value) {
+  return Number(value) * Math.PI / 180
+}
+
+function getDistanceMeters(origin, fresque) {
+  if (!origin || !hasValidCoordinates(fresque)) return Infinity
+
+  const [lng, lat] = getLngLat(fresque)
+  const dLat = toRadians(lat - origin.lat)
+  const dLng = toRadians(lng - origin.lng)
+  const originLat = toRadians(origin.lat)
+  const targetLat = toRadians(lat)
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(originLat) * Math.cos(targetLat) * Math.sin(dLng / 2) ** 2
+
+  return EARTH_RADIUS_METERS * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function formatDistance(meters) {
+  const value = Number(meters)
+  if (!Number.isFinite(value)) return 'distance inconnue'
+  if (value < 50) return 'moins de 50 m'
+  if (value < 1000) return `${Math.round(value)} m`
+  return `${(value / 1000).toFixed(value < 10000 ? 1 : 0).replace('.', ',')} km`
+}
+
+function getGeolocationErrorMessage(error) {
+  if (error?.code === 1) return 'Autorise la localisation pour voir les fresques autour de toi.'
+  if (error?.code === 2) return 'Position introuvable pour le moment.'
+  if (error?.code === 3) return 'La localisation prend trop de temps. Réessaie.'
+  return 'La localisation n’est pas disponible sur cet appareil.'
+}
+
+function getMapboxErrorMessage(error) {
+  return String(error?.message || error?.error?.message || error?.statusText || '')
+}
+
+function isMapboxAuthError(message) {
+  const text = message.toLowerCase()
+
+  return [
+    'invalid token',
+    'access token invalid',
+    'token is invalid',
+    'token has expired',
+    'unauthorized',
+    'not authorized',
+    'forbidden',
+    '401',
+    '403',
+  ].some(pattern => text.includes(pattern))
+}
+
+function isNonCriticalMapboxResourceError(message) {
+  const text = message.toLowerCase()
+
+  return (
+    text.includes('/fonts/v1/') ||
+    text.includes('/models/v1/') ||
+    text.includes('could not load model')
+  )
+}
+
 export default function MapPage() {
   const mapContainer = useRef(null)
   const map          = useRef(null)
   const markersRef   = useRef([])
+  const userMarkerRef = useRef(null)
   const initialFitRef = useRef(false)
   const navigate     = useNavigate()
   const [fresques, setFresques]   = useState([])
@@ -67,6 +153,12 @@ export default function MapPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [artistFilter, setArtistFilter] = useState('')
   const [tagFilter, setTagFilter] = useState('')
+  const [nearbyMode, setNearbyMode] = useState(false)
+  const [nearbyRadius, setNearbyRadius] = useState(DEFAULT_NEARBY_RADIUS)
+  const [nearbyIndex, setNearbyIndex] = useState(0)
+  const [userPosition, setUserPosition] = useState(null)
+  const [locating, setLocating] = useState(false)
+  const [locationError, setLocationError] = useState('')
 
   const geolocatedFresques = useMemo(() => fresques.filter(hasValidCoordinates), [fresques])
   const artistOptions = useMemo(() => {
@@ -105,6 +197,31 @@ export default function MapPage() {
       return matchesSearch && matchesArtist && matchesTag
     })
   }, [artistFilter, geolocatedFresques, searchTerm, tagFilter])
+  const nearbyCandidates = useMemo(() => {
+    if (!userPosition) return []
+
+    return visibleFresques
+      .map(f => ({
+        ...f,
+        distanceMeters: getDistanceMeters(userPosition, f),
+      }))
+      .filter(f => Number.isFinite(f.distanceMeters))
+      .sort((a, b) => a.distanceMeters - b.distanceMeters)
+  }, [userPosition, visibleFresques])
+  const nearbyMatches = useMemo(() => {
+    return nearbyCandidates.filter(f => f.distanceMeters <= nearbyRadius)
+  }, [nearbyCandidates, nearbyRadius])
+  const nearbyDiscoveryFresques = useMemo(() => {
+    if (!nearbyMode || !userPosition) return []
+    return nearbyMatches.length > 0 ? nearbyMatches : nearbyCandidates.slice(0, 3)
+  }, [nearbyCandidates, nearbyMatches, nearbyMode, userPosition])
+  const mapFresques = useMemo(() => {
+    if (nearbyMode && userPosition) return nearbyDiscoveryFresques
+    return visibleFresques
+  }, [nearbyDiscoveryFresques, nearbyMode, userPosition, visibleFresques])
+  const activeNearbyFresque = nearbyDiscoveryFresques.length > 0
+    ? nearbyDiscoveryFresques[nearbyIndex % nearbyDiscoveryFresques.length]
+    : null
   const filtersActive = Boolean(searchTerm.trim() || artistFilter || tagFilter)
   const selectedPhotoUrl = getPhotoUrl(selected)
   const selectedDate = formatCreationDate(selected?.date_creation)
@@ -183,13 +300,27 @@ export default function MapPage() {
     }
 
     const handleMapError = event => {
-      const message = event?.error?.message || ''
-      console.error('Mapbox error:', event?.error || event)
-      setMapError(
-        message.toLowerCase().includes('token')
-          ? 'La clé Mapbox est invalide ou expirée.'
-          : 'La carte n’a pas pu se charger correctement.'
-      )
+      const error = event?.error || event
+      const message = getMapboxErrorMessage(error)
+
+      if (isMapboxAuthError(message)) {
+        console.error('Mapbox auth error:', error)
+        setMapError('La clé Mapbox est invalide ou expirée.')
+        return
+      }
+
+      if (isNonCriticalMapboxResourceError(message)) {
+        console.debug('Ressource Mapbox non critique ignorée:', message)
+        return
+      }
+
+      if (instance.loaded() && message.toLowerCase().includes('networkerror')) {
+        console.debug('Erreur réseau Mapbox ignorée après chargement:', message)
+        return
+      }
+
+      console.error('Mapbox error:', error)
+      setMapError('La carte n’a pas pu se charger correctement.')
     }
 
     const handleMapClick = () => {
@@ -248,6 +379,8 @@ export default function MapPage() {
       instance.off('error', handleMapError)
       instance.off('click', handleMapClick)
       markersRef.current.forEach(m => m.remove())
+      userMarkerRef.current?.remove()
+      userMarkerRef.current = null
       instance.remove()
       map.current = null
     }
@@ -260,9 +393,9 @@ export default function MapPage() {
     markersRef.current.forEach(m => m.remove())
     markersRef.current = []
 
-    if (visibleFresques.length === 0) return
+    if (mapFresques.length === 0) return
 
-    visibleFresques.forEach(f => {
+    mapFresques.forEach(f => {
       const title = f.titre || 'Fresque'
       const thumbnailUrl = getPhotoUrl(f)
       const [lng, lat] = getLngLat(f)
@@ -300,20 +433,7 @@ export default function MapPage() {
       el.addEventListener('click', event => {
         event.stopPropagation()
 
-        /* Animate fly-to */
-        map.current.flyTo({
-          center: [lng, lat],
-          zoom: Math.min(18, Math.max(map.current.getZoom(), 17.35)),
-          pitch: 42,
-          bearing: -8,
-          offset: [0, -72],
-          duration: 800,
-          essential: true,
-        })
-        setSelected(f)
-        /* Highlight active */
-        clearActiveMarkers()
-        marker.classList.add('active')
+        openFresquePreview(f)
       })
 
       const mapMarker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
@@ -327,7 +447,7 @@ export default function MapPage() {
       initialFitRef.current = true
       window.requestAnimationFrame(() => focusFresques({ duration: 0 }))
     }
-  }, [mapReady, visibleFresques])
+  }, [mapReady, mapFresques])
 
   useEffect(() => {
     if (!selected) return
@@ -341,15 +461,75 @@ export default function MapPage() {
   }, [selected])
 
   useEffect(() => {
+    if (!nearbyMode || !activeNearbyFresque || selected) return
+    setActiveMarkerById(activeNearbyFresque.id)
+  }, [activeNearbyFresque?.id, nearbyMode, selected])
+
+  useEffect(() => {
     if (!selected) return
-    if (visibleFresques.some(f => f.id === selected.id)) return
+    if (mapFresques.some(f => f.id === selected.id)) return
     closePanel()
-  }, [selected, visibleFresques])
+  }, [selected, mapFresques])
 
   useEffect(() => {
     if (!mapReady || !map.current || !filtersActive) return
     window.requestAnimationFrame(() => focusFresques({ duration: 600 }))
-  }, [filtersActive, mapReady, visibleFresques])
+  }, [filtersActive, mapReady, mapFresques])
+
+  useEffect(() => {
+    if (nearbyDiscoveryFresques.length === 0) {
+      setNearbyIndex(0)
+      return
+    }
+
+    setNearbyIndex(index => Math.min(index, nearbyDiscoveryFresques.length - 1))
+  }, [nearbyDiscoveryFresques.length])
+
+  useEffect(() => {
+    if (!mapReady || !map.current) return
+
+    if (!nearbyMode || !userPosition) {
+      userMarkerRef.current?.remove()
+      userMarkerRef.current = null
+      return
+    }
+
+    if (!userMarkerRef.current) {
+      const el = document.createElement('div')
+      el.className = 'gco-user-marker'
+      el.setAttribute('aria-hidden', 'true')
+
+      userMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([userPosition.lng, userPosition.lat])
+        .addTo(map.current)
+      return
+    }
+
+    userMarkerRef.current.setLngLat([userPosition.lng, userPosition.lat])
+  }, [mapReady, nearbyMode, userPosition])
+
+  useEffect(() => {
+    if (!mapReady || !map.current || !nearbyMode || !userPosition) return
+
+    window.requestAnimationFrame(() => {
+      if (nearbyDiscoveryFresques.length > 0) {
+        focusFresques({
+          duration: 700,
+          fresquesToFit: nearbyDiscoveryFresques.slice(0, 4),
+        })
+        return
+      }
+
+      map.current.flyTo({
+        center: ANKADIVATO_CENTER,
+        zoom: 16,
+        pitch: 34,
+        bearing: -10,
+        duration: 700,
+        essential: true,
+      })
+    })
+  }, [mapReady, nearbyDiscoveryFresques, nearbyMode, userPosition])
 
   function clearActiveMarkers() {
     mapContainer.current
@@ -357,7 +537,35 @@ export default function MapPage() {
       .forEach(m => m.classList.remove('active'))
   }
 
-  function focusFresques({ duration = 800, panelOpen = false, fresquesToFit = visibleFresques } = {}) {
+  function setActiveMarkerById(id) {
+    clearActiveMarkers()
+    mapContainer.current
+      ?.querySelectorAll('.gco-photo-marker')
+      .forEach(m => {
+        if (m.dataset.id === String(id)) m.classList.add('active')
+      })
+  }
+
+  function openFresquePreview(fresque, { openPanel = true } = {}) {
+    if (!fresque) return
+
+    if (map.current && hasValidCoordinates(fresque)) {
+      map.current.flyTo({
+        center: getLngLat(fresque),
+        zoom: Math.min(18, Math.max(map.current.getZoom(), 17.35)),
+        pitch: 42,
+        bearing: -8,
+        offset: [0, -72],
+        duration: 800,
+        essential: true,
+      })
+    }
+
+    if (openPanel) setSelected(fresque)
+    setActiveMarkerById(fresque.id)
+  }
+
+  function focusFresques({ duration = 800, panelOpen = false, fresquesToFit = mapFresques } = {}) {
     if (!map.current) return
 
     if (fresquesToFit.length === 0) {
@@ -388,9 +596,9 @@ export default function MapPage() {
     fresquesToFit.forEach(f => bounds.extend(getLngLat(f)))
     map.current.fitBounds(bounds, {
       padding: {
-        top: 112,
+        top: nearbyMode && userPosition ? 258 : 220,
         right: 64,
-        bottom: panelOpen ? 230 : 92,
+        bottom: panelOpen ? 230 : nearbyMode && userPosition ? 210 : 92,
         left: 64,
       },
       maxZoom: 17,
@@ -414,7 +622,75 @@ export default function MapPage() {
     setArtistFilter('')
     setTagFilter('')
     closePanel()
-    window.requestAnimationFrame(() => focusFresques({ duration: 700, fresquesToFit: geolocatedFresques }))
+    window.requestAnimationFrame(() => {
+      focusFresques({
+        duration: 700,
+        fresquesToFit: nearbyMode && userPosition && nearbyDiscoveryFresques.length > 0
+          ? nearbyDiscoveryFresques
+          : geolocatedFresques,
+      })
+    })
+  }
+
+  function requestNearbyDiscovery() {
+    setLocationError('')
+
+    if (!('geolocation' in navigator)) {
+      setLocationError('La localisation n’est pas disponible sur cet appareil.')
+      return
+    }
+
+    if (userPosition && !locating) {
+      setNearbyMode(true)
+      setNearbyIndex(0)
+      closePanel()
+      return
+    }
+
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setUserPosition({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        })
+        setNearbyMode(true)
+        setNearbyIndex(0)
+        setLocating(false)
+        closePanel()
+      },
+      error => {
+        setLocating(false)
+        setNearbyMode(false)
+        setLocationError(getGeolocationErrorMessage(error))
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 30000,
+        timeout: 10000,
+      },
+    )
+  }
+
+  function disableNearbyDiscovery() {
+    setNearbyMode(false)
+    setLocationError('')
+    setNearbyIndex(0)
+    closePanel()
+    window.requestAnimationFrame(() => focusFresques({ duration: 700, fresquesToFit: visibleFresques }))
+  }
+
+  function showNextNearby() {
+    if (nearbyDiscoveryFresques.length < 2) return
+    setNearbyIndex(index => (index + 1) % nearbyDiscoveryFresques.length)
+  }
+
+  function showPreviousNearby() {
+    if (nearbyDiscoveryFresques.length < 2) return
+    setNearbyIndex(index => (
+      index === 0 ? nearbyDiscoveryFresques.length - 1 : index - 1
+    ))
   }
 
   return (
@@ -456,7 +732,9 @@ export default function MapPage() {
           color: '#999',
           letterSpacing: '0.08em',
         }}>
-          {visibleFresques.length} fresques
+          {nearbyMode && userPosition
+            ? `${mapFresques.length} proches`
+            : `${visibleFresques.length} fresques`}
         </span>
       </div>
 
@@ -503,6 +781,48 @@ export default function MapPage() {
             ))}
           </select>
         </div>
+        <div className="gco-nearby-launch-row">
+          <button
+            type="button"
+            className={`gco-nearby-launch ${nearbyMode ? 'is-active' : ''}`}
+            onClick={requestNearbyDiscovery}
+            disabled={locating || !mapReady || loading}
+          >
+            <LocateFixed size={14} strokeWidth={2.4} />
+            <span>{locating ? 'Localisation...' : nearbyMode ? 'Proximité active' : 'Découvrir près de moi'}</span>
+          </button>
+
+          {nearbyMode && userPosition && (
+            <select
+              className="gco-nearby-radius"
+              value={nearbyRadius}
+              onChange={e => setNearbyRadius(Number(e.target.value))}
+              aria-label="Rayon de proximité"
+            >
+              {NEARBY_RADIUS_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          )}
+
+          {nearbyMode && (
+            <button
+              type="button"
+              className="gco-nearby-clear"
+              onClick={disableNearbyDiscovery}
+              aria-label="Désactiver la proximité"
+              title="Désactiver"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        {locationError && (
+          <div className="gco-nearby-status">
+            <AlertTriangle size={13} />
+            {locationError}
+          </div>
+        )}
       </div>
 
       {/* ── Quick recenter ── */}
@@ -577,6 +897,88 @@ export default function MapPage() {
                   <span>{f.titre || 'Fresque'}</span>
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Nearby discovery deck ── */}
+      {nearbyMode && userPosition && !selected && (
+        <div className="gco-nearby-panel">
+          <div className="gco-nearby-panel-head">
+            <div>
+              <span>À proximité</span>
+              <strong>
+                {nearbyMatches.length > 0
+                  ? `${nearbyMatches.length} dans ${formatDistance(nearbyRadius)}`
+                  : 'Les plus proches'}
+              </strong>
+            </div>
+            {nearbyDiscoveryFresques.length > 1 && (
+              <div className="gco-nearby-stepper">
+                <button
+                  type="button"
+                  onClick={showPreviousNearby}
+                  aria-label="Fresque précédente"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <span>{nearbyIndex % nearbyDiscoveryFresques.length + 1}/{nearbyDiscoveryFresques.length}</span>
+                <button
+                  type="button"
+                  onClick={showNextNearby}
+                  aria-label="Fresque suivante"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {activeNearbyFresque ? (
+            <div className="gco-nearby-card">
+              <button
+                type="button"
+                className="gco-nearby-card-media"
+                onClick={() => openFresquePreview(activeNearbyFresque)}
+                aria-label={`Voir ${activeNearbyFresque.titre || 'cette fresque'}`}
+                style={{
+                  backgroundImage: getPhotoUrl(activeNearbyFresque)
+                    ? `url("${escapeCssUrl(getPhotoUrl(activeNearbyFresque))}")`
+                    : 'linear-gradient(135deg, #ff3b1f, #1a1a1a)',
+                }}
+              >
+                <span>{formatDistance(activeNearbyFresque.distanceMeters)}</span>
+              </button>
+
+              <div className="gco-nearby-card-body">
+                <div>
+                  <p>{activeNearbyFresque.artiste?.nom || 'Artiste inconnu'}</p>
+                  <h3>{activeNearbyFresque.titre || 'Fresque'}</h3>
+                  <small>{activeNearbyFresque.adresse || activeNearbyFresque.tags?.slice(0, 2).join(' · ') || 'Quartier galerie'}</small>
+                </div>
+
+                <div className="gco-nearby-card-actions">
+                  <button
+                    type="button"
+                    onClick={() => openFresquePreview(activeNearbyFresque, { openPanel: false })}
+                    aria-label="Centrer sur la carte"
+                    title="Centrer"
+                  >
+                    <Navigation size={14} />
+                  </button>
+                  <button type="button" onClick={showNextNearby} disabled={nearbyDiscoveryFresques.length < 2}>
+                    Passer
+                  </button>
+                  <button type="button" onClick={() => openFresquePreview(activeNearbyFresque)}>
+                    Découvrir <ArrowRight size={13} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="gco-nearby-empty">
+              Aucune fresque disponible avec ces filtres.
             </div>
           )}
         </div>
@@ -789,7 +1191,7 @@ export default function MapPage() {
           z-index: 3;
           width: 60px;
           height: 60px;
-          border: 2px solid rgba(255,59,31,0);
+          border: 2px solid rgba(255,59,31,0.72);
           border-radius: 50%;
           transform: translateX(-50%);
           transition: border-color 0.18s ease, box-shadow 0.18s ease;
@@ -950,9 +1352,309 @@ export default function MapPage() {
           box-shadow: 0 4px 16px rgba(0,0,0,0.16);
         }
 
+        .gco-nearby-launch-row {
+          pointer-events: auto;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto auto;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .gco-nearby-launch,
+        .gco-nearby-radius,
+        .gco-nearby-clear {
+          height: 36px;
+          border: 0;
+          border-radius: 12px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+          backdrop-filter: blur(12px);
+        }
+
+        .gco-nearby-launch {
+          min-width: 0;
+          padding: 0 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          background: rgba(255,59,31,0.95);
+          color: #fff;
+          font-family: var(--font-display);
+          font-size: 10px;
+          letter-spacing: 0.07em;
+          text-transform: uppercase;
+        }
+
+        .gco-nearby-launch:disabled {
+          opacity: 0.6;
+          cursor: default;
+        }
+
+        .gco-nearby-launch.is-active {
+          background: rgba(26,26,26,0.92);
+        }
+
+        .gco-nearby-launch span {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .gco-nearby-radius {
+          min-width: 88px;
+          padding: 0 10px;
+          background: rgba(255,255,255,0.94);
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 10px;
+          letter-spacing: 0.04em;
+        }
+
+        .gco-nearby-clear {
+          width: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255,255,255,0.94);
+          color: #1a1a1a;
+        }
+
+        .gco-nearby-status {
+          pointer-events: auto;
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 9px 11px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.96);
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 10px;
+          line-height: 1.25;
+          letter-spacing: 0.03em;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+        }
+
+        .gco-user-marker {
+          position: relative;
+          width: 18px;
+          height: 18px;
+          border: 3px solid #fff;
+          border-radius: 50%;
+          background: #2563eb;
+          box-shadow: 0 0 0 2px rgba(37,99,235,0.35), 0 8px 18px rgba(0,0,0,0.22);
+        }
+
+        .gco-user-marker::after {
+          content: '';
+          position: absolute;
+          inset: -12px;
+          border-radius: 50%;
+          background: rgba(37,99,235,0.16);
+          animation: userPulse 1.8s ease-out infinite;
+        }
+
+        .gco-nearby-panel {
+          position: absolute;
+          left: 16px;
+          right: 16px;
+          bottom: 16px;
+          z-index: 19;
+          width: min(420px, calc(100% - 32px));
+          margin: 0 auto;
+          padding: 10px;
+          border-radius: 14px;
+          background: rgba(255,255,255,0.96);
+          box-shadow: 0 18px 45px rgba(0,0,0,0.2);
+          backdrop-filter: blur(14px);
+          animation: slideUpPanel 0.3s ease both;
+        }
+
+        .gco-nearby-panel-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 9px;
+        }
+
+        .gco-nearby-panel-head div:first-child {
+          min-width: 0;
+          display: grid;
+          gap: 2px;
+        }
+
+        .gco-nearby-panel-head span {
+          font-family: var(--font-display);
+          font-size: 9px;
+          color: #ff3b1f;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .gco-nearby-panel-head strong {
+          font-family: var(--font-display);
+          font-size: 13px;
+          color: #1a1a1a;
+          letter-spacing: 0.04em;
+          line-height: 1;
+          white-space: nowrap;
+        }
+
+        .gco-nearby-stepper {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex: 0 0 auto;
+        }
+
+        .gco-nearby-stepper button {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: rgba(26,26,26,0.08);
+          color: #1a1a1a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .gco-nearby-stepper span {
+          min-width: 34px;
+          text-align: center;
+          color: #666;
+        }
+
+        .gco-nearby-card {
+          display: grid;
+          grid-template-columns: 112px minmax(0, 1fr);
+          min-height: 126px;
+          border-radius: 10px;
+          overflow: hidden;
+          background: #f4f0e8;
+        }
+
+        .gco-nearby-card-media {
+          position: relative;
+          min-height: 126px;
+          border: 0;
+          background-size: cover;
+          background-position: center;
+        }
+
+        .gco-nearby-card-media::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to bottom, rgba(0,0,0,0.04), rgba(0,0,0,0.45));
+        }
+
+        .gco-nearby-card-media span {
+          position: absolute;
+          left: 8px;
+          bottom: 8px;
+          z-index: 1;
+          max-width: calc(100% - 16px);
+          padding: 5px 7px;
+          border-radius: 999px;
+          background: rgba(255,59,31,0.92);
+          color: #fff;
+          font-family: var(--font-display);
+          font-size: 9px;
+          letter-spacing: 0.04em;
+          white-space: nowrap;
+        }
+
+        .gco-nearby-card-body {
+          min-width: 0;
+          padding: 11px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .gco-nearby-card-body p {
+          margin: 0 0 4px;
+          font-family: var(--font-display);
+          font-size: 9px;
+          color: #ff3b1f;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .gco-nearby-card-body h3 {
+          margin: 0;
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 18px;
+          line-height: 0.98;
+          letter-spacing: 0.03em;
+          overflow-wrap: anywhere;
+        }
+
+        .gco-nearby-card-body small {
+          display: block;
+          margin-top: 5px;
+          color: #666;
+          font-size: 11px;
+          line-height: 1.25;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+
+        .gco-nearby-card-actions {
+          display: grid;
+          grid-template-columns: 34px minmax(0, 0.85fr) minmax(0, 1fr);
+          gap: 7px;
+        }
+
+        .gco-nearby-card-actions button {
+          min-width: 0;
+          height: 34px;
+          border: 0;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          background: #fff;
+          color: #1a1a1a;
+          font-family: var(--font-display);
+          font-size: 9px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          box-shadow: inset 0 0 0 1px rgba(26,26,26,0.08);
+        }
+
+        .gco-nearby-card-actions button:disabled {
+          opacity: 0.42;
+          cursor: default;
+        }
+
+        .gco-nearby-card-actions button:last-child {
+          background: #1a1a1a;
+          color: #fff;
+          box-shadow: none;
+        }
+
+        .gco-nearby-empty {
+          padding: 16px;
+          border-radius: 10px;
+          background: #f4f0e8;
+          color: #666;
+          font-family: var(--font-display);
+          font-size: 11px;
+          letter-spacing: 0.04em;
+          text-align: center;
+        }
+
         /* Mapbox overrides */
         .mapboxgl-ctrl-top-right {
-          top: 158px !important;
+          top: 214px !important;
           right: 16px !important;
         }
         .mapboxgl-ctrl-top-right .mapboxgl-ctrl {
@@ -1091,14 +1793,54 @@ export default function MapPage() {
             grid-template-columns: 1fr;
           }
 
+          .gco-nearby-launch-row {
+            grid-template-columns: minmax(0, 1fr) auto;
+          }
+
+          .gco-nearby-clear {
+            grid-column: 2;
+            grid-row: 1;
+          }
+
+          .gco-nearby-radius {
+            grid-column: 1 / -1;
+            grid-row: 2;
+            width: 100%;
+          }
+
+          .gco-nearby-panel {
+            left: 12px;
+            right: 12px;
+            bottom: 12px;
+            width: calc(100% - 24px);
+            padding: 8px;
+          }
+
+          .gco-nearby-card {
+            grid-template-columns: 94px minmax(0, 1fr);
+          }
+
+          .gco-nearby-card-actions {
+            grid-template-columns: 34px minmax(0, 1fr);
+          }
+
+          .gco-nearby-card-actions button:nth-child(2) {
+            display: none;
+          }
+
           .mapboxgl-ctrl-top-right {
-            top: 196px !important;
+            top: 268px !important;
           }
         }
 
         @keyframes slideUpPanel {
           from { opacity: 0; transform: translateY(24px) scale(0.97); }
           to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes userPulse {
+          from { transform: scale(0.55); opacity: 0.65; }
+          to { transform: scale(1.25); opacity: 0; }
         }
       `}</style>
     </div>
